@@ -99,6 +99,12 @@
   th{background:var(--panel2);color:var(--accent)}
   .center{text-align:center}
   a{color:var(--accent)}
+  /* tutor chat */
+  .msg{padding:10px 14px;border-radius:12px;margin:8px 0;max-width:88%;white-space:pre-wrap;font-size:14px;line-height:1.55;word-break:break-word}
+  .msg.user{background:var(--accent);color:#06283d;margin-left:auto}
+  .msg.ai{background:var(--panel2);border:1px solid var(--line)}
+  .msg.think{opacity:.6;font-style:italic}
+  #chatBox{max-height:55vh;overflow-y:auto}
 </style>
 </head>
 <body>
@@ -114,6 +120,7 @@
   <button data-v="cli">명령어</button>
   <button data-v="vocab">단어</button>
   <button data-v="report">리포트</button>
+  <button data-v="tutor">AI 튜터</button>
 </nav>
 <main>
 
@@ -294,6 +301,36 @@
   </div>
 </section>
 
+<!-- TUTOR -->
+<section id="tutor" class="view">
+  <div class="card">
+    <h2>AI 튜터</h2>
+    <p style="color:var(--muted);font-size:13px">Anthropic Claude로 질문에 바로 답합니다. API 키는 이 기기(localStorage)에만 저장되며, Anthropic API 호출 외에는 전송되지 않습니다.</p>
+    <details id="tutorSettings">
+      <summary style="cursor:pointer;color:var(--accent);font-weight:600">설정 — API 키 입력</summary>
+      <div style="margin-top:10px">
+        <input class="search" type="password" id="tutorKey" placeholder="sk-ant-... (Anthropic API 키)">
+        <select id="tutorModel" style="width:100%;margin-bottom:6px">
+          <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 — 빠르고 저렴 (기본)</option>
+          <option value="claude-sonnet-4-6">Claude Sonnet 4.6 — 더 똑똑, 비쌈</option>
+          <option value="claude-opus-4-8">Claude Opus 4.8 — 최고 성능, 가장 비쌈</option>
+          <option value="__custom">직접 입력…</option>
+        </select>
+        <input class="search" id="tutorModelCustom" placeholder="커스텀 모델명 입력" style="display:none">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:8px">모델명 오류가 나면 console.anthropic.com의 최신 모델명을 '직접 입력'으로 넣으세요.</div>
+        <button class="btn" onclick="saveTutorSettings()">저장</button>
+        <span id="tutorSaved" style="color:var(--accent2);font-size:13px;margin-left:8px"></span>
+      </div>
+    </details>
+    <div id="chatBox" style="margin-top:14px"></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <textarea id="tutorInput" rows="2" placeholder="CCNA 관련 질문을 입력하세요 (한국어/영어)" style="flex:1;margin:0"></textarea>
+      <button class="btn" onclick="sendTutor()">보내기</button>
+    </div>
+    <div style="margin-top:8px"><button class="btn sec" style="font-size:13px;padding:6px 12px" onclick="clearChat()">대화 지우기</button></div>
+  </div>
+</section>
+
 </main>
 
 <script>
@@ -457,6 +494,7 @@ document.querySelectorAll('nav button').forEach(b=>{
     if(b.dataset.v==='cli') initCli();
     if(b.dataset.v==='vocab') initVocab();
     if(b.dataset.v==='report') renderReport();
+    if(b.dataset.v==='tutor') initTutor();
   };
 });
 
@@ -587,7 +625,8 @@ function lockOpts(q){
 }
 function finishQ(correct,q){
   const exp=document.getElementById('exp');
-  exp.innerHTML=(correct?'<b>[정답]</b>':'<b>[오답]</b>')+'<br><b>해석:</b> '+escapeHtml(q.t)+'<br><b>설명:</b> '+q.e;
+  exp.innerHTML=(correct?'<b>[정답]</b>':'<b>[오답]</b>')+'<br><b>해석:</b> '+escapeHtml(q.t)+'<br><b>설명:</b> '+q.e+'<br><button class="btn sec" style="font-size:13px;padding:6px 12px;margin-top:8px" onclick="askTutorAboutLast()">이 문제 AI 튜터에게 질문</button>';
+  window._lastQ=q;
   exp.classList.add('show');
   document.getElementById('nextBtn').style.display='inline-block';
   const sub=document.getElementById('subBtn');if(sub)sub.style.display='none';
@@ -878,6 +917,89 @@ function renderVocabList(){
     r.innerHTML=`<span class="en">${escapeHtml(v.en)}</span><span>${escapeHtml(v.ko)}</span>`;
     list.appendChild(r);
   });
+}
+
+/* ============== AI 튜터 (Anthropic Claude) ============== */
+let tutorHist=[];
+const TUTOR_SYS="You are a friendly, encouraging CCNA 200-301 tutor. The learner is Korean, studying for the exam in English but more comfortable in Korean. Always answer in Korean, but keep technical and exam terms in English (e.g., OSPF, administrative distance, trunk). Be concise and clear, and use simple examples. When asked about a specific multiple-choice question, explain why the correct option is right and briefly why each other option is wrong.";
+function switchTo(v){
+  document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.v===v));
+  document.querySelectorAll('.view').forEach(x=>x.classList.toggle('active',x.id===v));
+}
+const MODELS=["claude-haiku-4-5-20251001","claude-sonnet-4-6","claude-opus-4-8"];
+function getModel(){return localStorage.getItem('ccnaModel')||'claude-haiku-4-5-20251001';}
+function saveChat(){try{localStorage.setItem('ccnaChat',JSON.stringify(tutorHist.slice(-40)));}catch(e){}}
+function initTutor(){
+  document.getElementById('tutorKey').value=localStorage.getItem('ccnaApiKey')||'';
+  const m=getModel(),sel=document.getElementById('tutorModel'),cst=document.getElementById('tutorModelCustom');
+  if(MODELS.includes(m)){sel.value=m;cst.style.display='none';}
+  else{sel.value='__custom';cst.style.display='block';cst.value=m;}
+  sel.onchange=()=>{cst.style.display=sel.value==='__custom'?'block':'none';};
+  if(!localStorage.getItem('ccnaApiKey'))document.getElementById('tutorSettings').open=true;
+  if(tutorHist.length===0){try{tutorHist=JSON.parse(localStorage.getItem('ccnaChat')||'[]');}catch(e){tutorHist=[];}}
+  renderChat();
+}
+function saveTutorSettings(){
+  localStorage.setItem('ccnaApiKey',document.getElementById('tutorKey').value.trim());
+  const sel=document.getElementById('tutorModel');
+  const model=sel.value==='__custom'?(document.getElementById('tutorModelCustom').value.trim()||'claude-haiku-4-5-20251001'):sel.value;
+  localStorage.setItem('ccnaModel',model);
+  const s=document.getElementById('tutorSaved');s.textContent='저장됨';setTimeout(()=>s.textContent='',1500);
+}
+function mdToHtml(s){
+  s=escapeHtml(s);
+  const blocks=[];
+  s=s.replace(/```[a-z]*\n?([\s\S]*?)```/gi,(m,c)=>{blocks.push(c.replace(/\n$/,''));return ''+(blocks.length-1)+'';});
+  s=s.replace(/`([^`]+)`/g,'<code>$1</code>');
+  s=s.replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>');
+  s=s.replace(/^#{1,6}\s*(.+)$/gm,'<b>$1</b>');
+  const lines=s.split('\n');let out='',inUl=false,inOl=false;
+  const close=()=>{if(inUl){out+='</ul>';inUl=false;}if(inOl){out+='</ol>';inOl=false;}};
+  lines.forEach(ln=>{
+    const mu=ln.match(/^\s*[-*]\s+(.*)$/),mo=ln.match(/^\s*\d+\.\s+(.*)$/);
+    if(/^\d+$/.test(ln.trim())){close();out+=ln.trim();}
+    else if(mu){if(!inUl){close();out+='<ul style="margin:4px 0 4px 18px">';inUl=true;}out+='<li>'+mu[1]+'</li>';}
+    else if(mo){if(!inOl){close();out+='<ol style="margin:4px 0 4px 18px">';inOl=true;}out+='<li>'+mo[1]+'</li>';}
+    else{close();out+=ln+'<br>';}
+  });
+  close();
+  return out.replace(/(\d+)(<br>)?/g,(m,i)=>'<pre class="exhibit">'+blocks[+i]+'</pre>');
+}
+function renderChat(){
+  const box=document.getElementById('chatBox');if(!box)return;
+  if(tutorHist.length===0&&!window._tutorBusy){box.innerHTML='<p style="color:var(--muted);font-size:14px">질문을 입력하거나, 퀴즈 채점 후 \"이 문제 AI 튜터에게 질문\"을 눌러보세요.</p>';return;}
+  box.innerHTML=tutorHist.map(m=>`<div class="msg ${m.role==='user'?'user':'ai'}">${m.role==='user'?escapeHtml(m.content):mdToHtml(m.content)}</div>`).join('')+(window._tutorBusy?'<div class="msg ai think">생각 중…</div>':'');
+  box.scrollTop=box.scrollHeight;
+}
+async function sendTutor(preset){
+  const key=(localStorage.getItem('ccnaApiKey')||'').trim();
+  if(!key){alert('먼저 설정에서 Anthropic API 키를 입력·저장하세요.');document.getElementById('tutorSettings').open=true;return;}
+  const text=(preset||document.getElementById('tutorInput').value||'').trim();
+  if(!text||window._tutorBusy)return;
+  document.getElementById('tutorInput').value='';
+  tutorHist.push({role:'user',content:text});
+  window._tutorBusy=true;saveChat();renderChat();
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+      headers:{'x-api-key':key,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:getModel(),max_tokens:1024,system:TUTOR_SYS,messages:tutorHist})});
+    const data=await res.json();
+    if(data.error)throw new Error(data.error.message||'API 오류');
+    const reply=(data.content||[]).map(c=>c.text||'').join('').trim()||'(빈 응답)';
+    tutorHist.push({role:'assistant',content:reply});
+  }catch(e){
+    tutorHist.push({role:'assistant',content:'[오류] '+e.message+'\n· API 키가 올바른지, 크레딧 잔액이 있는지, 모델명이 맞는지 확인하세요.'});
+  }
+  window._tutorBusy=false;saveChat();renderChat();
+}
+function clearChat(){if(tutorHist.length&&!confirm('대화 기록을 모두 지울까요?'))return;tutorHist=[];saveChat();renderChat();}
+function askTutorAboutLast(){
+  const q=window._lastQ;if(!q)return;
+  const opts=q.o.map((t,i)=>String.fromCharCode(65+i)+'. '+t).join('\n');
+  const ans=Array.isArray(q.a)?q.a.map(i=>String.fromCharCode(65+i)).join(', '):String.fromCharCode(65+q.a);
+  const ex=q.ex?('Exhibit:\n'+q.ex+'\n\n'):'';
+  const text=`다음 CCNA 문제를 한국어로 쉽게 설명해줘. 정답이 왜 맞고 다른 보기는 왜 틀린지도 알려줘.\n\n${ex}Q: ${q.q}\n${opts}\n정답: ${ans}`;
+  switchTo('tutor');initTutor();sendTutor(text);
 }
 
 /* init */
