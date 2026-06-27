@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CCNA 200-301 연습 프로그램</title>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --panel2:#273449; --accent:#38bdf8;
+    --accent2:#22c55e; --warn:#f59e0b; --bad:#ef4444; --txt:#e2e8f0;
+    --muted:#94a3b8; --line:#334155;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Segoe UI','Apple SD Gothic Neo',sans-serif;
+    background:var(--bg);color:var(--txt);line-height:1.6}
+  header{background:linear-gradient(135deg,#0c4a6e,#075985);padding:18px 20px;
+    text-align:center;border-bottom:2px solid var(--accent)}
+  header h1{margin:0;font-size:22px}
+  header p{margin:4px 0 0;color:#bae6fd;font-size:13px}
+  nav{display:flex;justify-content:center;gap:6px;background:var(--panel);
+    padding:8px;position:sticky;top:0;z-index:10;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+  nav button{background:transparent;color:var(--muted);border:none;padding:10px 14px;
+    border-radius:8px;cursor:pointer;font-size:15px;font-weight:600;transition:.15s}
+  nav button:hover{color:var(--txt);background:var(--panel2)}
+  nav button.active{background:var(--accent);color:#06283d}
+  main{max-width:880px;margin:0 auto;padding:20px}
+  .view{display:none}
+  .view.active{display:block}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:20px;margin-bottom:16px}
+  h2{color:var(--accent);margin-top:0}
+  h3{color:#bae6fd}
+  .btn{background:var(--accent);color:#06283d;border:none;padding:11px 20px;
+    border-radius:9px;cursor:pointer;font-size:15px;font-weight:700}
+  .btn:hover{filter:brightness(1.1)}
+  .btn.sec{background:var(--panel2);color:var(--txt);border:1px solid var(--line)}
+  .btn.green{background:var(--accent2);color:#052e16}
+  .pill{display:inline-block;background:var(--panel2);color:var(--accent);
+    border:1px solid var(--line);padding:3px 10px;border-radius:20px;font-size:12px;margin:2px}
+  /* quiz */
+  .ref{color:var(--warn);font-weight:700;font-size:13px;margin:0 0 6px;text-transform:uppercase;letter-spacing:.5px}
+  .exhibit{background:#0b1220;color:#9fe7ff;border:1px solid var(--line);border-radius:9px;
+    padding:12px 14px;font-family:Consolas,monospace;font-size:13px;white-space:pre;overflow-x:auto;margin:8px 0}
+  .stem{font-weight:600;font-size:16px;margin:6px 0}
+  .hint2{color:var(--accent2);font-size:13px;font-weight:700;margin:0 0 6px}
+  .opt{display:block;width:100%;text-align:left;background:var(--panel2);
+    border:1px solid var(--line);color:var(--txt);padding:13px 16px;border-radius:10px;
+    margin:8px 0;cursor:pointer;font-size:15px;transition:.12s;font-family:inherit}
+  .opt:hover{border-color:var(--accent)}
+  .opt.sel{border-color:var(--accent);background:#1e3a5f}
+  .opt.correct{background:#064e3b;border-color:var(--accent2)}
+  .opt.wrong{background:#4c0519;border-color:var(--bad)}
+  .opt.disabled{cursor:default;opacity:.9}
+  .opt .ltr{display:inline-block;width:22px;font-weight:800;color:var(--accent)}
+  .explain{background:var(--panel2);border-left:4px solid var(--accent);
+    padding:12px 16px;border-radius:8px;margin-top:12px;font-size:14px;display:none}
+  .explain.show{display:block}
+  .meta{display:flex;justify-content:space-between;align-items:center;
+    color:var(--muted);font-size:13px;margin-bottom:10px;flex-wrap:wrap;gap:6px}
+  .progressbar{height:8px;background:var(--panel2);border-radius:6px;overflow:hidden;margin:10px 0}
+  .progressbar>div{height:100%;background:var(--accent);width:0;transition:.3s}
+  select{background:var(--panel2);color:var(--txt);border:1px solid var(--line);
+    padding:8px 12px;border-radius:8px;font-size:14px}
+  /* dnd */
+  .dnd-wrap{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:640px){.dnd-wrap{grid-template-columns:1fr}.opt{font-size:14px}.exhibit{font-size:12px}}
+  .bank,.targets{display:flex;flex-direction:column;gap:8px}
+  .chip{background:var(--accent);color:#06283d;padding:9px 12px;border-radius:8px;
+    cursor:grab;font-weight:600;font-size:14px;user-select:none;text-align:center}
+  .chip.placed{opacity:.4;cursor:default}
+  .slot{border:2px dashed var(--line);border-radius:9px;padding:10px;min-height:46px;
+    display:flex;align-items:center;gap:8px;background:var(--panel2)}
+  .slot .label{flex:1;color:var(--muted);font-size:14px}
+  .slot.over{border-color:var(--accent)}
+  .slot .dropped{background:var(--panel);border:1px solid var(--accent);padding:6px 10px;
+    border-radius:7px;font-size:13px;cursor:pointer}
+  .slot.ok{border-color:var(--accent2);border-style:solid}
+  .slot.no{border-color:var(--bad);border-style:solid}
+  /* vocab */
+  .flash{perspective:1000px;height:200px;margin:14px 0}
+  .flash-inner{position:relative;width:100%;height:100%;transition:transform .5s;
+    transform-style:preserve-3d;cursor:pointer}
+  .flash.flip .flash-inner{transform:rotateY(180deg)}
+  .flash-face{position:absolute;width:100%;height:100%;backface-visibility:hidden;
+    background:var(--panel2);border:1px solid var(--line);border-radius:14px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;padding:18px;text-align:center}
+  .flash-back{transform:rotateY(180deg)}
+  .flash-face .en{font-size:26px;font-weight:800;color:var(--accent)}
+  .flash-face .ko{font-size:18px;margin-top:8px}
+  .flash-face small{color:var(--muted);margin-top:10px;font-size:13px}
+  .vocab-row{display:flex;justify-content:space-between;gap:12px;padding:10px 0;
+    border-bottom:1px solid var(--line)}
+  .vocab-row .en{font-weight:700;color:var(--accent);min-width:150px}
+  input.search,textarea{width:100%;background:var(--panel2);color:var(--txt);
+    border:1px solid var(--line);padding:11px 14px;border-radius:9px;font-size:15px;margin-bottom:6px}
+  .big{font-size:42px;font-weight:800;color:var(--accent2)}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  td,th{border:1px solid var(--line);padding:8px 10px;text-align:left}
+  th{background:var(--panel2);color:var(--accent)}
+  .center{text-align:center}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<header>
+  <h1>CCNA 200-301 연습 프로그램</h1>
+  <p>실제 시험처럼 영어 문제 · 한글 해설 — 기출 스타일 반영</p>
+</header>
+<nav>
+  <button data-v="home" class="active">홈</button>
+  <button data-v="quiz">퀴즈</button>
+  <button data-v="dnd">DnD</button>
+  <button data-v="subnet">서브넷</button>
+  <button data-v="cli">명령어</button>
+  <button data-v="vocab">단어</button>
+  <button data-v="report">리포트</button>
+</nav>
+<main>
+
+<!-- HOME -->
+<section id="home" class="view active">
+  <div class="card">
+    <h2>시험 한눈에 보기</h2>
+    <table>
+      <tr><th>항목</th><th>내용</th></tr>
+      <tr><td>시험 코드</td><td>200-301 (CCNA) · 현행 v1.1</td></tr>
+      <tr><td>출제 언어</td><td><b>영어</b> (그래서 이 퀴즈도 영어 지문 + 한글 해설)</td></tr>
+      <tr><td>문항 수 / 시간</td><td>약 100~120문항 / 120분</td></tr>
+      <tr><td>합격선</td><td>약 825 / 1000 (≈ 82~85%)</td></tr>
+      <tr><td>문제 유형</td><td>4지선다, 복수정답(Choose two), 드래그앤드롭, 시뮬레이션 랩</td></tr>
+    </table>
+    <p style="margin-top:14px"><b>6개 도메인 비중:</b></p>
+    <span class="pill">Network Fundamentals 20%</span>
+    <span class="pill">Network Access 20%</span>
+    <span class="pill">IP Connectivity 25%</span>
+    <span class="pill">IP Services 10%</span>
+    <span class="pill">Security 15%</span>
+    <span class="pill">Automation 10%</span>
+  </div>
+  <div class="card">
+    <h3>이번 업그레이드 (기출 604문항 분석 반영)</h3>
+    <p style="font-size:14.5px">실제 SPOTO 기출 샘플을 분석해 출제 스타일을 반영했습니다:</p>
+    <p style="font-size:14px;color:var(--muted)">
+    - 모든 문제를 <b>영어 지문</b>으로 (실제 시험과 동일)<br>
+    - <b>"Refer to the exhibit"</b> — show ip route 출력·config·토폴로지 해석 문제 추가<br>
+    - <b>"Choose two"</b> 복수정답 문제 추가<br>
+    - 올바른 <b>설정 명령어 고르기</b> 유형 추가<br>
+    - 기출 빈출 주제 보강(WPA3/SAE, 클라우드 모델, north/southbound API, EUI-64, floating static, VLAN hopping 등)</p>
+  </div>
+  <div class="card">
+    <h3>학습 진행 (이 기기에 저장)</h3>
+    <div class="meta"><span>풀어본 문제</span><span id="h-total">0</span></div>
+    <div class="meta"><span>정답률</span><span id="h-rate">-</span></div>
+    <div class="meta"><span>연속 정답</span><span id="h-streak">0</span></div>
+    <button class="btn sec" onclick="resetStats()">기록 초기화</button>
+  </div>
+</section>
+
+<!-- QUIZ -->
+<section id="quiz" class="view">
+  <div class="card">
+    <div class="meta">
+      <span>Domain:
+        <select id="domainSel" onchange="startQuiz()">
+          <option value="all">All</option>
+          <option value="기초">Network Fundamentals</option>
+          <option value="액세스">Network Access</option>
+          <option value="라우팅">IP Connectivity</option>
+          <option value="서비스">IP Services</option>
+          <option value="보안">Security</option>
+          <option value="자동화">Automation</option>
+        </select>
+      </span>
+      <span id="qcount"></span>
+    </div>
+    <div class="progressbar"><div id="qbar"></div></div>
+    <div id="quizBody"></div>
+  </div>
+</section>
+
+<!-- DND -->
+<section id="dnd" class="view">
+  <div class="card">
+    <div class="meta">
+      <span>연습 선택: <select id="dndSel" onchange="loadDnd()"></select></span>
+      <span id="dndScore"></span>
+    </div>
+    <p id="dndPrompt" style="color:var(--muted);font-size:14px"></p>
+    <div class="dnd-wrap">
+      <div><h3>보기</h3><div class="bank" id="dndBank"></div></div>
+      <div><h3>정답 칸</h3><div class="targets" id="dndTargets"></div></div>
+    </div>
+    <div style="margin-top:16px;display:flex;gap:8px">
+      <button class="btn green" onclick="checkDnd()">채점</button>
+      <button class="btn sec" onclick="loadDnd()">다시</button>
+    </div>
+    <div class="explain" id="dndExplain"></div>
+  </div>
+</section>
+
+<!-- SUBNET -->
+<section id="subnet" class="view">
+  <div class="card">
+    <h2>서브넷팅 암산 연습기</h2>
+    <div class="meta">
+      <span>난이도:
+        <select id="subDiff" onchange="newSubnet()">
+          <option value="easy">쉬움 (/24~/28)</option>
+          <option value="mid" selected>보통 (/16~/30)</option>
+          <option value="hard">어려움 (/8~/30)</option>
+        </select>
+      </span>
+      <span id="subStat"></span>
+    </div>
+    <div id="subBody"></div>
+  </div>
+  <div class="card">
+    <h3>빠른 참고표</h3>
+    <table>
+      <tr><th>CIDR</th><th>마스크</th><th>블록</th><th>사용가능 호스트</th></tr>
+      <tr><td>/24</td><td>255.255.255.0</td><td>256</td><td>254</td></tr>
+      <tr><td>/25</td><td>255.255.255.128</td><td>128</td><td>126</td></tr>
+      <tr><td>/26</td><td>255.255.255.192</td><td>64</td><td>62</td></tr>
+      <tr><td>/27</td><td>255.255.255.224</td><td>32</td><td>30</td></tr>
+      <tr><td>/28</td><td>255.255.255.240</td><td>16</td><td>14</td></tr>
+      <tr><td>/29</td><td>255.255.255.248</td><td>8</td><td>6</td></tr>
+      <tr><td>/30</td><td>255.255.255.252</td><td>4</td><td>2</td></tr>
+    </table>
+    <p style="font-size:13px;color:var(--muted)">블록 크기 = 256 − 마스크값. 네트워크 주소는 블록 크기의 배수.</p>
+  </div>
+</section>
+
+<!-- CLI -->
+<section id="cli" class="view">
+  <div class="card">
+    <div class="meta">
+      <span>시나리오: <select id="cliSel" onchange="loadCli()"></select></span>
+      <span id="cliStat"></span>
+    </div>
+    <p id="cliTask" style="font-size:15px"></p>
+    <p id="cliTopo" style="color:var(--muted);font-size:13px"></p>
+    <textarea id="cliInput" rows="7" placeholder="여기에 명령어를 한 줄씩 입력하세요…"
+      style="font-family:Consolas,monospace;font-size:14px;color:#7dd3fc;background:#0b1220"></textarea>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn green" onclick="checkCli()">채점</button>
+      <button class="btn sec" onclick="toggleHint()">힌트</button>
+      <button class="btn sec" onclick="showCliAnswer()">정답 보기</button>
+      <button class="btn sec" onclick="loadCli()">초기화</button>
+    </div>
+    <div class="explain" id="cliHint"></div>
+    <div class="explain" id="cliResult"></div>
+  </div>
+</section>
+
+<!-- VOCAB -->
+<section id="vocab" class="view">
+  <div class="card">
+    <h2>플래시카드</h2>
+    <div class="meta"><span id="vIdx"></span>
+      <span><button class="btn sec" onclick="shuffleVocab()">섞기</button></span></div>
+    <div class="flash" id="flash" onclick="this.classList.toggle('flip')">
+      <div class="flash-inner">
+        <div class="flash-face"><div class="en" id="fEn"></div><small>(클릭하면 뜻)</small></div>
+        <div class="flash-face flash-back"><div class="ko" id="fKo"></div><small id="fNote"></small></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:center">
+      <button class="btn sec" onclick="prevCard()">이전</button>
+      <button class="btn" onclick="nextCard()">다음</button>
+    </div>
+  </div>
+  <div class="card">
+    <h3>전체 용어 목록</h3>
+    <input class="search" id="vSearch" placeholder="검색 (영어/한글)…" oninput="renderVocabList()">
+    <div id="vocabList"></div>
+  </div>
+</section>
+
+<!-- REPORT -->
+<section id="report" class="view">
+  <div class="card">
+    <h2>약점·강점 리포트</h2>
+    <p style="color:var(--muted);font-size:14px">퀴즈를 풀수록 도메인별 정답률이 쌓입니다. 정답률이 낮은 도메인을 집중 학습하세요.</p>
+    <div id="repBody"></div>
+  </div>
+  <div class="card">
+    <h3>오답노트</h3>
+    <div class="meta"><span id="wrongCount"></span>
+      <span style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn green" onclick="startReview()">오답만 다시 풀기</button>
+        <button class="btn sec" onclick="clearWrong()">오답노트 비우기</button>
+      </span></div>
+    <div id="wrongList"></div>
+  </div>
+</section>
+
+</main>
+
+<script>
+/* ============== QUIZ DATA (English stems, Korean explanations) ==============
+   d: domain  q: stem(EN)  o: options(EN)  a: answer index OR array(multi)
+   ex: optional exhibit text (rendered as monospace)  e: explanation(KO) */
+const QUESTIONS = [
+ /* ---------- Network Fundamentals (기초) ---------- */
+ {d:"기초",q:"At which OSI layer does a router make forwarding decisions based on IP addresses?",o:["Layer 1 (Physical)","Layer 2 (Data Link)","Layer 3 (Network)","Layer 4 (Transport)"],a:2,e:"라우팅과 IP 처리는 Layer 3(Network)에서 일어납니다. 라우터가 동작하는 계층."},
+ {d:"기초",q:"Which transport-layer protocol provides connection-oriented, reliable delivery?",o:["UDP","TCP","ICMP","ARP"],a:1,e:"TCP는 3-way handshake로 연결을 맺고 순서·재전송을 보장합니다. UDP는 비연결·비신뢰."},
+ {d:"기초",q:"How many usable host addresses are available in a 192.168.1.0/24 network?",o:["256","255","254","253"],a:2,e:"/24 → 2^8=256, 네트워크·브로드캐스트 제외하면 254개(usable)."},
+ {d:"기초",q:"Which address block is a private IPv4 range (RFC 1918)?",o:["172.32.0.0/12","192.168.0.0/16","11.0.0.0/8","169.254.0.0/16"],a:1,e:"사설 대역: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16. 169.254.x.x는 APIPA, 11.x는 공인."},
+ {d:"기초",q:"A host has the address 169.254.10.5. What does this most likely indicate?",o:["A correctly assigned public address","A static loopback address","The host failed to reach a DHCP server (APIPA)","An IPv6-mapped address"],a:2,e:"169.254.0.0/16(APIPA)는 DHCP 서버 도달 실패 시 자동 할당됩니다 — DHCP 문제 신호."},
+ {d:"기초",q:"What is the length of an Ethernet MAC address?",o:["32 bits","48 bits","64 bits","128 bits"],a:1,e:"MAC은 48비트(6바이트), 앞 24비트는 OUI(제조사)."},
+ {d:"기초",q:"Which protocol resolves a known IPv4 address to its MAC address on a local segment?",o:["DNS","ARP","DHCP","ICMP"],a:1,e:"ARP는 IP→MAC 매핑을 알아냅니다('who has this IP?' 브로드캐스트)."},
+ {d:"기초",q:"Which prefix identifies an IPv6 link-local address?",o:["2000::/3","FE80::/10","FF00::/8","::1/128"],a:1,e:"FE80::/10이 링크-로컬. 2000::/3 글로벌 유니캐스트, FF00::/8 멀티캐스트, ::1 루프백."},
+ {d:"기초",q:"Refer to the exhibit. Which IPv6 interface ID is produced for the interface using EUI-64?",ex:"Interface MAC: C601.420F.0007\nPrefix: 2001:DB8:0:1::/64",o:["::C601:42FF:FE0F:7","::C401:42FF:FE0F:7","::C601:420F:0007","::FFFE:C601:420F"],a:1,e:"EUI-64: MAC을 반으로 나눠 가운데 FFFE 삽입, 7번째 비트(U/L) 반전. C6→C4가 되어 C401:42FF:FE0F:7."},
+ {d:"기초",q:"Which device separates collision domains on every port?",o:["Hub","Repeater","Switch","Media converter"],a:2,e:"스위치는 포트마다 콜리전 도메인을 분리. 허브는 전체가 하나의 콜리전 도메인."},
+ {d:"기초",q:"Which cloud service model lets an organization install its own operating system on a provided virtual machine?",o:["SaaS","PaaS","IaaS","FaaS"],a:2,e:"IaaS는 가상머신·스토리지 같은 인프라를 제공 → OS는 사용자가 설치. PaaS는 플랫폼, SaaS는 완성 앱."},
+ {d:"기초",q:"In server virtualization, which component allocates physical CPU, memory, and storage to each VM?",o:["Hypervisor","Container runtime","Load balancer","vSwitch"],a:0,e:"하이퍼바이저(Type1/Type2)가 물리 자원을 각 VM에 분배합니다."},
+ {d:"기초",q:"How does a spine-and-leaf data-center design scale when more access ports are required?",o:["Add another core router","Add a leaf switch and connect it to every spine","Convert a spine into a leaf","Add links between leaf switches"],a:1,e:"스파인-리프는 leaf 스위치를 추가해 모든 spine에 연결하면 확장됩니다(각 leaf는 모든 spine과 연결)."},
+
+ /* ---------- Network Access (액세스) ---------- */
+ {d:"액세스",q:"Which standard encapsulation tags frames to carry multiple VLANs over a trunk link?",o:["ISL","802.1Q","802.11","802.3"],a:1,e:"IEEE 802.1Q가 표준 VLAN 태깅(4바이트 태그 삽입). ISL은 시스코 구식 독자방식."},
+ {d:"액세스",q:"Refer to the exhibit. An untagged frame arrives on Gi0/1. In which VLAN is it processed?",ex:"SW1# show running-config interface Gi0/1\n switchport mode trunk\n switchport trunk native vlan 5\n switchport trunk allowed vlan 1,5,10,20",o:["VLAN 1","VLAN 5","VLAN 10","The frame is dropped"],a:1,e:"트렁크에서 태그 없는 프레임은 Native VLAN(여기선 5)으로 처리됩니다."},
+ {d:"액세스",q:"In STP, which switch becomes the single reference point for all path calculations?",o:["Designated bridge","Root bridge","Backup bridge","Edge bridge"],a:1,e:"Root Bridge는 가장 낮은 Bridge ID(우선순위+MAC)를 가진 스위치로 선출."},
+ {d:"액세스",q:"What is the effect of enabling PortFast on a switch access port?",o:["It blocks all BPDUs","It transitions the port directly to forwarding","It forms a trunk automatically","It doubles the bandwidth"],a:1,e:"PortFast는 listening/learning을 건너뛰고 즉시 forwarding으로 전환(단말 포트용)."},
+ {d:"액세스",q:"Which feature err-disables a PortFast port that unexpectedly receives a BPDU?",o:["Root Guard","BPDU Guard","DHCP Snooping","Storm Control"],a:1,e:"BPDU Guard는 PortFast 포트에 BPDU가 들어오면 포트를 err-disable해 STP 루프를 방지."},
+ {d:"액세스",q:"Which technology bundles multiple physical links into one logical link for more bandwidth and redundancy?",o:["EtherChannel","Spanning Tree","HSRP","VTP"],a:0,e:"EtherChannel(LACP/PAgP)은 여러 링크를 묶어 대역폭·이중화를 제공. STP는 묶음을 하나로 인식."},
+ {d:"액세스",q:"Refer to the exhibit. Which command on SW2 forms an LACP EtherChannel with SW1?",ex:"SW1(config-if-range)# channel-group 1 mode active",o:["channel-group 1 mode on","channel-group 1 mode desirable","channel-group 1 mode active","channel-group 1 mode auto"],a:2,e:"LACP에서 active는 active 또는 passive와 묶입니다. desirable/auto는 PAgP, on은 정적(협상 없음)."},
+ {d:"액세스",q:"Which enhancement in WPA3 protects against offline password-guessing and eavesdropping?",o:["TKIP","WEP","SAE (Simultaneous Authentication of Equals)","WPS"],a:2,e:"WPA3는 SAE(Dragonfly) 핸드셰이크로 오프라인 사전공격·도청을 방어합니다."},
+ {d:"액세스",q:"Which practice best protects a switched network against VLAN hopping?",o:["Enable DTP on all ports","Assign access ports to a VLAN other than the native VLAN 1, and hardcode trunks","Disable Spanning Tree","Use hubs instead of switches"],a:1,e:"native VLAN을 미사용 VLAN으로 바꾸고, 트렁크를 수동 고정(DTP 비활성)하면 VLAN hopping을 막습니다."},
+ {d:"액세스",q:"What distinguishes an SSID from a BSSID in wireless networking?",o:["SSID is the AP's MAC; BSSID is the network name","SSID is the network name; BSSID is the AP's radio MAC","They are identical","SSID is the channel; BSSID is the band"],a:1,e:"SSID는 사람이 보는 네트워크 이름, BSSID는 AP 무선의 MAC 주소."},
+ {d:"액세스",q:"What are two disadvantages of a full-mesh topology? (Choose two.)",o:["High implementation cost","Lack of redundancy","Complex configuration","Single point of failure","No support for VLANs"],a:[0,2],e:"풀메시는 모든 노드를 직접 연결 → 비용↑, 설정 복잡↑. 이중화는 오히려 뛰어남(단점 아님)."},
+
+ /* ---------- IP Connectivity (라우팅) ---------- */
+ {d:"라우팅",q:"Which value does a router use to choose between routes learned from different sources to the same prefix?",o:["Metric","Administrative distance","MTU","Bandwidth"],a:1,e:"AD는 경로 출처의 신뢰도. 값이 낮을수록 우선(직접연결0, 스태틱1, OSPF110)."},
+ {d:"라우팅",q:"What is the default administrative distance of OSPF?",o:["90","100","110","120"],a:2,e:"OSPF=110, EIGRP=90, RIP=120, 스태틱=1. 같은 prefix면 AD 낮은 쪽 선택."},
+ {d:"라우팅",q:"Which metric does OSPF use by default to select the best path?",o:["Hop count","Bandwidth-based cost","Delay","TTL"],a:1,e:"OSPF metric = cost = 10^8 / 대역폭(bps). RIP이 홉 수를 씁니다."},
+ {d:"라우팅",q:"Refer to the exhibit. How did R2 learn the route to 10.0.3.0/24?",ex:"R2# show ip route\nCodes: C-connected, S-static, O-OSPF, D-EIGRP\n      10.0.0.0/8 is variably subnetted\nC        10.0.1.0/24 is directly connected, Gig0/0\nO        10.0.3.0/24 [110/3] via 10.0.1.2, Gig0/0\nS        10.0.4.0/24 [1/0] via 10.0.1.3",o:["Directly connected","Via a static route","Via OSPF","Via EIGRP"],a:2,e:"코드 'O'와 AD 110([110/3])은 OSPF로 학습된 경로임을 의미합니다."},
+ {d:"라우팅",q:"Refer to the exhibit. Which command on R1 creates a static route to the remote LAN 10.0.3.0/24?",ex:"R1 (Gi0/0: 10.0.1.1/24) --- (10.0.1.2) R2 (Gi0/1: 10.0.3.1/24) --- 10.0.3.0/24",o:["ip route 10.0.3.0 255.255.255.0 10.0.1.2","ip route 10.0.3.0 255.255.255.0 10.0.3.1","ip route 10.0.1.0 255.255.255.0 10.0.3.1","ip route 0.0.0.0 0.0.0.0 10.0.3.1"],a:0,e:"next-hop은 R1이 직접 도달 가능한 R2 인터페이스(10.0.1.2)여야 합니다. 목적지는 10.0.3.0/24."},
+ {d:"라우팅",q:"What does the command 'ip route 0.0.0.0 0.0.0.0 10.1.1.1' configure?",o:["A host route","A default route","An OSPF area","An ACL"],a:1,e:"0.0.0.0/0은 모든 목적지를 뜻하는 default route. 일치 경로가 없을 때 사용."},
+ {d:"라우팅",q:"When multiple routes to a destination exist, which does the router install first?",o:["The route with the highest metric","The route with the longest prefix match","The route with the highest AD","A random route"],a:1,e:"Longest Prefix Match가 1순위(가장 구체적). 같으면 AD, 그다음 metric."},
+ {d:"라우팅",q:"How is the OSPF router ID determined when it is not configured manually?",o:["Lowest interface IP","Highest loopback IP, then highest active interface IP","Lowest MAC address","The process ID"],a:1,e:"수동 router-id > 최고 루프백 IP > 최고 활성 인터페이스 IP 순. Process ID와는 무관."},
+ {d:"라우팅",q:"Which mismatch will NOT prevent two routers from forming an OSPF adjacency?",o:["Different area numbers","Mismatched hello/dead timers","Different OSPF process IDs","Subnet mask mismatch on the link"],a:2,e:"Process ID는 로컬 값이라 달라도 인접에 영향 없음. Area·타이머·서브넷·MTU 불일치는 실패 원인."},
+ {d:"라우팅",q:"On a broadcast multi-access segment, what does OSPF elect to minimize LSA flooding?",o:["Root and backup bridge","DR and BDR","Active and standby router","Master and slave"],a:1,e:"OSPF는 멀티액세스망에서 DR/BDR을 선출(우선순위 높은값 > 높은 Router ID)해 LSA 교환을 효율화."},
+ {d:"라우팅",q:"Which protocol lets two routers share a virtual IP so hosts keep a single default gateway during failover?",o:["OSPF","HSRP","STP","CDP"],a:1,e:"HSRP(FHRP)는 active/standby가 가상 IP·MAC을 공유해 게이트웨이 장애 시 자동 절체."},
+ {d:"라우팅",q:"You configure a backup route with a higher administrative distance than the primary. What is this called?",o:["Equal-cost load balancing","A floating static route","Policy-based routing","Route summarization"],a:1,e:"AD를 높여 평소엔 비활성, 주 경로 장애 시에만 쓰이는 백업이 floating static route."},
+
+ /* ---------- IP Services (서비스) ---------- */
+ {d:"서비스",q:"Which NAT method maps many inside hosts to one public address using port numbers?",o:["Static NAT","Dynamic NAT","PAT (NAT overload)","Twice NAT"],a:2,e:"PAT는 여러 내부 IP를 1개 공인 IP+포트로 구분. 가정용 공유기 방식."},
+ {d:"서비스",q:"In NAT terminology, what is the 'inside global' address?",o:["The private IP of an inside host","The public IP that represents an inside host after translation","The real public IP of an outside host","The private IP of an outside host"],a:1,e:"Inside Local=내부 사설, Inside Global=변환 후 대표 공인. Outside Global=실제 외부 공인."},
+ {d:"서비스",q:"What is the correct order of the DHCP address-assignment process?",o:["Discover, Offer, Request, Acknowledge","Offer, Discover, Acknowledge, Request","Request, Offer, Discover, Acknowledge","Acknowledge, Request, Offer, Discover"],a:0,e:"DORA: Discover → Offer → Request → Acknowledge. 클라이언트 브로드캐스트로 시작."},
+ {d:"서비스",q:"Which command lets a router relay DHCP requests to a server on a different subnet?",o:["ip default-gateway","ip helper-address","ip nat inside","ip route"],a:1,e:"ip helper-address는 브로드캐스트 DHCP 요청을 유니캐스트로 서버에 중계(relay)."},
+ {d:"서비스",q:"Which service translates domain names into IP addresses?",o:["DHCP","DNS","NTP","SNMP"],a:1,e:"DNS(53)는 이름↔IP를 변환합니다."},
+ {d:"서비스",q:"Which protocol synchronizes the clocks of network devices?",o:["NTP","SNMP","Syslog","TFTP"],a:0,e:"NTP(UDP 123)는 장비 시간을 동기화 — 로그 타임스탬프·인증서 정확성에 중요."},
+ {d:"서비스",q:"In Syslog, which severity level is the most critical?",o:["0 (Emergency)","3 (Error)","5 (Notice)","7 (Debugging)"],a:0,e:"Syslog 레벨 0(emergency)이 가장 심각, 7(debug)이 가장 상세. 숫자가 낮을수록 심각."},
+ {d:"서비스",q:"In a QoS policy, what is the purpose of marking?",o:["Dropping traffic that exceeds a rate","Tagging packets with a priority value (e.g., DSCP)","Buffering and smoothing traffic","Encrypting the payload"],a:1,e:"Marking은 분류 후 DSCP/CoS로 우선순위를 표시. policing=초과분 폐기, shaping=버퍼링."},
+
+ /* ---------- Security (보안) ---------- */
+ {d:"보안",q:"What can a standard ACL filter on?",o:["Source IP only","Destination IP only","Source and destination IP and port","MAC address"],a:0,e:"표준 ACL(1~99)은 출발지 IP만. 확장 ACL(100~199)은 출발지/목적지 IP+포트+프로토콜."},
+ {d:"보안",q:"Where should an extended ACL typically be placed?",o:["Closest to the destination","Closest to the source","Always at the core","Placement does not matter"],a:1,e:"확장 ACL은 불필요 트래픽을 조기 차단하려고 출발지 가까이. 표준 ACL은 목적지 가까이."},
+ {d:"보안",q:"What does the wildcard mask 0.0.0.255 match in an ACL statement?",o:["A single host","An entire /24 network","All addresses (any)","Only the last octet"],a:1,e:"와일드카드 0=일치, 255=무시. 0.0.0.255는 앞 3옥텟 일치 = /24 전체."},
+ {d:"보안",q:"What is the default violation mode of switchport port security?",o:["protect","restrict","shutdown","monitor"],a:2,e:"기본 위반 모드는 shutdown(포트 err-disabled). protect/restrict는 트래픽만 차단."},
+ {d:"보안",q:"In AAA, what does Authorization determine?",o:["Who the user is","What the user is allowed to do","A record of user actions","The encryption method"],a:1,e:"AAA: Authentication(누구?), Authorization(권한?), Accounting(기록)."},
+ {d:"보안",q:"Which feature permits DHCP replies only from trusted ports to stop rogue DHCP servers?",o:["BPDU Guard","DHCP Snooping","PortFast","NAT"],a:1,e:"DHCP Snooping은 trusted 포트에서만 DHCP 응답을 허용해 rogue DHCP 공격을 차단."},
+ {d:"보안",q:"Which encryption does WPA2 use for strong wireless security?",o:["WEP","TKIP","AES (CCMP)","DES"],a:2,e:"WPA2는 AES(CCMP). WEP/TKIP은 취약해 권장되지 않음."},
+ {d:"보안",q:"Which IPsec mode encrypts the entire original IP packet?",o:["Transport mode","Tunnel mode","Transparent mode","Aggressive mode"],a:1,e:"Tunnel mode는 원본 IP 패킷 전체를 캡슐화·암호화(site-to-site VPN). Transport는 페이로드만."},
+ {d:"보안",q:"Which command stores the privileged-EXEC password as a strong hash?",o:["enable password","enable secret","service password-encryption","username privilege"],a:1,e:"enable secret은 강한 해시로 저장. enable password는 약함, service password-encryption은 Type7(약함)."},
+ {d:"보안",q:"Which program is the BEST defense against employees falling for phishing emails?",o:["Stronger firewall rules","Security awareness training for users","Port security","Disabling Telnet"],a:1,e:"피싱은 사람을 노리는 사회공학 → 사용자 보안 인식 교육이 가장 효과적."},
+
+ /* ---------- Automation (자동화) ---------- */
+ {d:"자동화",q:"Which data format uses indentation for structure and is common in Ansible playbooks?",o:["JSON","XML","YAML","CSV"],a:2,e:"YAML은 들여쓰기 기반의 가독성 좋은 형식. JSON은 {}·[], XML은 태그 기반."},
+ {d:"자동화",q:"In an SDN architecture, which plane is centralized into a controller?",o:["Data plane","Control plane","Management plane","Forwarding plane"],a:1,e:"SDN은 control plane(경로 결정)을 컨트롤러로 분리·중앙화. data plane은 실제 전달."},
+ {d:"자동화",q:"Which API type does an SDN controller use to push configuration down to network devices?",o:["Northbound API","Southbound API","Eastbound API","RESTCONF only"],a:1,e:"Southbound API(예: OpenFlow, NETCONF)는 컨트롤러→장비 방향. Northbound는 컨트롤러→앱."},
+ {d:"자동화",q:"Which HTTP method is used to retrieve a resource in a REST API?",o:["POST","GET","DELETE","PUT"],a:1,e:"GET=조회, POST=생성, PUT/PATCH=수정, DELETE=삭제."},
+ {d:"자동화",q:"Which HTTP header indicates that a REST request body is formatted as JSON?",o:["Accept-Language: json","Authorization: JSON","Content-Type: application/json","Encoding: json"],a:2,e:"Content-Type: application/json 헤더가 본문이 JSON 형식임을 알립니다."},
+ {d:"자동화",q:"Which configuration-management tool is agentless and uses SSH to push changes?",o:["Puppet","Chef","Ansible","SNMP"],a:2,e:"Ansible은 agentless로 SSH push 방식·멱등성. Puppet/Chef는 보통 agent+pull."},
+ {d:"자동화",q:"How is data primarily structured in JSON?",o:["Indentation-based hierarchy","Key-value pairs and arrays","Elements wrapped in tags","Comma-separated rows"],a:1,e:"JSON은 {\"key\":\"value\"}와 [배열]. 들여쓰기는 YAML, 태그는 XML, 행/쉼표는 CSV."},
+ {d:"자동화",q:"What are two benefits of controller-based (SDN) networking over traditional per-device configuration? (Choose two.)",o:["Centralized policy management","Manual CLI on each device","Faster, consistent configuration deployment","Higher risk of inconsistent configs","No need for any network devices"],a:[0,2],e:"컨트롤러 기반은 중앙 정책 관리 + 빠르고 일관된 배포가 장점. 수동 CLI·불일치 위험은 전통 방식의 단점."},
+ {d:"자동화",q:"What are two benefits commonly provided by network automation? (Choose two.)",o:["Reduced operational cost","Increased manual workload","Rapid, repeatable service deployment","More configuration drift","Slower change rollout"],a:[0,2],e:"자동화는 운영 비용 절감 + 빠르고 반복 가능한 배포가 핵심 이점."},
+];
+/* 각 문항의 한글 해석 (QUESTIONS와 같은 순서) */
+const TRANS=[
+ "라우터는 어느 OSI 계층에서 IP 주소를 기준으로 전달(forwarding) 결정을 내리는가?",
+ "연결지향이고 신뢰성 있는 전송을 제공하는 전송계층 프로토콜은?",
+ "192.168.1.0/24 네트워크에서 사용 가능한 호스트 주소 개수는?",
+ "다음 중 사설 IPv4 대역(RFC 1918)은?",
+ "호스트 주소가 169.254.10.5이다. 가장 가능성 높은 의미는?",
+ "이더넷 MAC 주소의 길이는?",
+ "로컬 구간에서 알고 있는 IPv4 주소로 MAC 주소를 알아내는 프로토콜은?",
+ "IPv6 링크-로컬 주소를 나타내는 접두사는?",
+ "exhibit 참고. EUI-64로 이 인터페이스에 만들어지는 IPv6 인터페이스 ID는?",
+ "모든 포트마다 콜리전 도메인을 분리하는 장비는?",
+ "제공받은 가상머신에 자체 OS를 설치할 수 있는 클라우드 서비스 모델은?",
+ "서버 가상화에서 각 VM에 물리 CPU·메모리·스토리지를 분배하는 구성요소는?",
+ "스파인-리프 설계에서 액세스 포트가 더 필요할 때 어떻게 확장하는가?",
+ "트렁크 링크로 여러 VLAN을 운반하려고 프레임에 태그를 붙이는 표준 캡슐화는?",
+ "exhibit 참고. 태그 없는(untagged) 프레임이 Gi0/1로 들어온다. 어느 VLAN에서 처리되는가?",
+ "STP에서 모든 경로 계산의 기준이 되는 단 하나의 스위치는?",
+ "스위치 액세스 포트에 PortFast를 켜면 생기는 효과는?",
+ "PortFast 포트가 예기치 않게 BPDU를 받으면 err-disable시키는 기능은?",
+ "여러 물리 링크를 하나의 논리 링크로 묶어 대역폭·이중화를 높이는 기술은?",
+ "exhibit 참고. SW2의 어느 명령이 SW1과 LACP EtherChannel을 형성하는가?",
+ "WPA3에서 오프라인 비밀번호 추측 공격·도청을 막아주는 향상 기능은?",
+ "스위치 네트워크에서 VLAN hopping을 가장 잘 막는 방법은?",
+ "무선에서 SSID와 BSSID의 차이는?",
+ "풀메시(full-mesh) 토폴로지의 단점 두 가지는? (두 개 선택)",
+ "같은 목적지로 가는 서로 다른 출처의 경로 중, 라우터가 선택 기준으로 쓰는 값은?",
+ "OSPF의 기본 administrative distance 값은?",
+ "OSPF가 최적 경로 선택에 기본으로 쓰는 metric은?",
+ "exhibit 참고. R2는 10.0.3.0/24 경로를 어떻게 학습했는가?",
+ "exhibit 참고. R1에서 원격 LAN 10.0.3.0/24로 가는 정적 경로를 만드는 명령은?",
+ "'ip route 0.0.0.0 0.0.0.0 10.1.1.1' 명령이 설정하는 것은?",
+ "한 목적지로 가는 경로가 여러 개일 때 라우터가 가장 먼저 설치하는 것은?",
+ "OSPF router ID를 수동 설정하지 않으면 어떻게 정해지는가?",
+ "두 라우터의 OSPF 인접(adjacency) 형성을 막지 '않는' 불일치는?",
+ "브로드캐스트 멀티액세스 구간에서 OSPF가 LSA 플러딩을 줄이려고 선출하는 것은?",
+ "장애 시에도 호스트가 단일 게이트웨이를 유지하도록 두 라우터가 가상 IP를 공유하게 하는 프로토콜은?",
+ "주 경로보다 administrative distance를 높여 만든 백업 경로를 무엇이라 하는가?",
+ "포트 번호를 이용해 여러 내부 호스트를 하나의 공인 주소에 매핑하는 NAT 방식은?",
+ "NAT 용어에서 'inside global' 주소란?",
+ "DHCP 주소 할당 과정의 올바른 순서는?",
+ "다른 서브넷의 서버로 DHCP 요청을 중계하게 하는 명령은?",
+ "도메인 이름을 IP 주소로 변환하는 서비스는?",
+ "네트워크 장비의 시계를 동기화하는 프로토콜은?",
+ "Syslog에서 가장 심각한(critical) 심각도 레벨은?",
+ "QoS 정책에서 marking(마킹)의 목적은?",
+ "표준(standard) ACL은 무엇을 기준으로 필터링하는가?",
+ "확장(extended) ACL은 보통 어디에 배치해야 하는가?",
+ "ACL 구문에서 와일드카드 마스크 0.0.0.255는 무엇과 일치하는가?",
+ "switchport port security의 기본 위반(violation) 모드는?",
+ "AAA에서 Authorization(인가)이 결정하는 것은?",
+ "rogue DHCP 서버를 막으려고 trusted 포트에서만 DHCP 응답을 허용하는 기능은?",
+ "WPA2가 강력한 무선 보안에 사용하는 암호화는?",
+ "원본 IP 패킷 전체를 암호화하는 IPsec 모드는?",
+ "특권(privileged-EXEC) 모드 비밀번호를 강력한 해시로 저장하는 명령은?",
+ "직원이 피싱 이메일에 속는 것을 막는 가장 좋은 방안은?",
+ "들여쓰기로 구조를 표현하며 Ansible 플레이북에 자주 쓰는 데이터 형식은?",
+ "SDN 구조에서 컨트롤러로 중앙화되는 평면(plane)은?",
+ "SDN 컨트롤러가 장비로 설정을 내려보낼 때 쓰는 API 유형은?",
+ "REST API에서 자원을 조회할 때 쓰는 HTTP 메서드는?",
+ "REST 요청 본문이 JSON 형식임을 나타내는 HTTP 헤더는?",
+ "에이전트 없이(agentless) SSH로 변경을 push하는 구성 관리 도구는?",
+ "JSON에서 데이터는 기본적으로 어떻게 구조화되는가?",
+ "전통적 장비별 설정과 비교한 컨트롤러 기반(SDN) 네트워킹의 장점 두 가지는? (두 개 선택)",
+ "네트워크 자동화가 흔히 제공하는 이점 두 가지는? (두 개 선택)",
+];
+QUESTIONS.forEach((q,i)=>{q.id=i;q.t=TRANS[i];});
+
+/* ============== NAV ============== */
+document.querySelectorAll('nav button').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    document.getElementById(b.dataset.v).classList.add('active');
+    if(b.dataset.v==='quiz') startQuiz();
+    if(b.dataset.v==='dnd') initDndSelect();
+    if(b.dataset.v==='subnet') newSubnet();
+    if(b.dataset.v==='cli') initCli();
+    if(b.dataset.v==='vocab') initVocab();
+    if(b.dataset.v==='report') renderReport();
+  };
+});
+
+function escapeHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+/* ============== STATS ============== */
+function getStats(){return JSON.parse(localStorage.getItem('ccnaStats')||'{"total":0,"correct":0,"streak":0}');}
+function setStats(s){localStorage.setItem('ccnaStats',JSON.stringify(s));renderHome();}
+function renderHome(){
+  const s=getStats();
+  document.getElementById('h-total').textContent=s.total;
+  document.getElementById('h-rate').textContent=s.total?Math.round(s.correct/s.total*100)+'%':'-';
+  document.getElementById('h-streak').textContent=s.streak;
+}
+function resetStats(){if(confirm('모든 기록(정답률·도메인별·오답노트)을 초기화할까요?')){localStorage.removeItem('ccnaDomain');localStorage.removeItem('ccnaWrong');setStats({total:0,correct:0,streak:0});}}
+function getDom(){return JSON.parse(localStorage.getItem('ccnaDomain')||'{}');}
+function setDom(d){localStorage.setItem('ccnaDomain',JSON.stringify(d));}
+function getWrong(){return JSON.parse(localStorage.getItem('ccnaWrong')||'[]');}
+function setWrong(w){localStorage.setItem('ccnaWrong',JSON.stringify(w));}
+let reviewMode=false;
+
+/* ============== REPORT + 오답노트 ============== */
+const DOMAINS=[["기초","Network Fundamentals"],["액세스","Network Access"],["라우팅","IP Connectivity"],["서비스","IP Services"],["보안","Security"],["자동화","Automation"]];
+function renderReport(){
+  const dom=getDom();let rows='';const data=[];
+  DOMAINS.forEach(([k,name])=>{
+    const d=dom[k]||{t:0,c:0};
+    const acc=d.t?Math.round(d.c/d.t*100):null;
+    data.push({k,name,t:d.t,acc});
+    const w=acc==null?0:acc;
+    const col=acc==null?'var(--muted)':(acc>=80?'var(--accent2)':acc>=50?'var(--warn)':'var(--bad)');
+    rows+=`<div style="margin:12px 0">
+      <div style="display:flex;justify-content:space-between;font-size:14px"><span>${name}</span>
+      <span>${acc==null?'기록 없음':acc+'% ('+d.c+'/'+d.t+')'}</span></div>
+      <div class="progressbar"><div style="width:${w}%;background:${col}"></div></div></div>`;
+  });
+  const tried=data.filter(d=>d.t>0);
+  let rec;
+  if(tried.length===0){rec='<p style="color:var(--muted)">아직 풀이 기록이 없습니다. 퀴즈를 풀면 여기에서 약점·강점을 분석해 드립니다.</p>';}
+  else{
+    const weak=[...tried].sort((a,b)=>a.acc-b.acc||b.t-a.t)[0];
+    const strong=[...tried].sort((a,b)=>b.acc-a.acc||b.t-a.t)[0];
+    rec=`<div class="explain show"><b>집중 추천:</b> ${weak.name} — 정답률 ${weak.acc}% (${weak.t}문항 풀이). 이 도메인을 더 연습하세요.`;
+    if(strong.k!==weak.k)rec+=`<br><b>강점:</b> ${strong.name} — 정답률 ${strong.acc}%. 잘하고 있어요.`;
+    rec+='</div>';
+  }
+  document.getElementById('repBody').innerHTML=rows+rec;
+  renderWrong();
+}
+function renderWrong(){
+  const w=getWrong();
+  document.getElementById('wrongCount').textContent=`${w.length}문항`;
+  const list=document.getElementById('wrongList');
+  if(w.length===0){list.innerHTML='<p style="color:var(--muted)">오답이 없습니다. 퀴즈에서 틀린 문제가 자동으로 모입니다.</p>';return;}
+  list.innerHTML=w.map(id=>{
+    const q=QUESTIONS[id];if(!q)return '';
+    const ans=Array.isArray(q.a)?q.a.map(i=>q.o[i]).join(', '):q.o[q.a];
+    const exh=q.ex?`<pre class="exhibit" style="font-size:12px">${escapeHtml(q.ex)}</pre>`:'';
+    return `<div style="border-bottom:1px solid var(--line);padding:12px 0">
+      ${exh}<div style="font-weight:600">${escapeHtml(q.q)}</div>
+      <div style="font-size:13px;color:var(--muted);margin:3px 0">해석: ${escapeHtml(q.t)}</div>
+      <div style="font-size:14px"><b style="color:var(--accent2)">정답:</b> ${escapeHtml(ans)}</div>
+      <div style="font-size:13px;color:var(--muted)">설명: ${q.e}</div></div>`;
+  }).join('');
+}
+function clearWrong(){if(confirm('오답노트를 비울까요?')){setWrong([]);renderReport();}}
+function startReview(){
+  const wset=new Set(getWrong());
+  const pool=QUESTIONS.filter(q=>wset.has(q.id));
+  if(pool.length===0){alert('오답노트가 비어 있습니다. 먼저 퀴즈를 풀어보세요.');return;}
+  reviewMode=true;quizPool=shuffle(pool);qi=0;
+  document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
+  document.querySelector('nav button[data-v="quiz"]').classList.add('active');
+  document.getElementById('quiz').classList.add('active');
+  renderQ();
+}
+
+/* ============== QUIZ ENGINE (single + multi + exhibit) ============== */
+let quizPool=[],qi=0;
+function startQuiz(){
+  reviewMode=false;
+  const dom=document.getElementById('domainSel').value;
+  quizPool=shuffle(QUESTIONS.filter(q=>dom==='all'||q.d===dom));
+  qi=0;renderQ();
+}
+const LTR=['A','B','C','D','E','F'];
+function renderQ(){
+  const body=document.getElementById('quizBody');
+  if(qi>=quizPool.length){
+    body.innerHTML=`<div class="center"><div class="big">완료!</div>
+      <p>이 세트 ${quizPool.length}문항을 다 풀었습니다.</p>
+      <button class="btn" onclick="startQuiz()">다시 풀기</button></div>`;
+    document.getElementById('qbar').style.width='100%';return;
+  }
+  const q=quizPool[qi];
+  document.getElementById('qcount').textContent=`${qi+1} / ${quizPool.length}`;
+  document.getElementById('qbar').style.width=(qi/quizPool.length*100)+'%';
+  const multi=Array.isArray(q.a);
+  const exHtml=q.ex?`<p class="ref">Refer to the exhibit.</p><pre class="exhibit">${escapeHtml(q.ex)}</pre>`:'';
+  body.innerHTML=`${exHtml}
+    <p class="stem">${q.q}</p>
+    <button class="btn sec" style="font-size:13px;padding:6px 12px;margin-bottom:8px" onclick="document.getElementById('trans').classList.toggle('show')">한글 해석 보기</button>
+    <div class="explain" id="trans">해석: ${escapeHtml(q.t)}</div>
+    ${multi?`<p class="hint2">(Choose ${q.a.length===2?'two':q.a.length}.)</p>`:''}
+    <div id="opts"></div>
+    ${multi?`<button class="btn" id="subBtn" onclick="submitMulti()">정답 확인</button>`:''}
+    <div class="explain" id="exp"></div>
+    <div style="margin-top:12px;text-align:right"><button class="btn sec" id="nextBtn" style="display:none" onclick="qi++;renderQ()">다음</button></div>`;
+  const opts=document.getElementById('opts');
+  const order=shuffle(q.o.map((t,i)=>({t,i})));
+  order.forEach(({t,i},pos)=>{
+    const b=document.createElement('button');
+    b.className='opt';b.dataset.i=i;
+    b.innerHTML=`<span class="ltr">${LTR[pos]}</span>${escapeHtml(t)}`;
+    if(multi){b.onclick=()=>b.classList.toggle('sel');}
+    else{b.onclick=()=>answerSingle(b,i,q);}
+    opts.appendChild(b);
+  });
+}
+function lockOpts(q){
+  const correctSet=new Set(Array.isArray(q.a)?q.a:[q.a]);
+  document.querySelectorAll('.opt').forEach(b=>{
+    b.classList.add('disabled');b.onclick=null;
+    if(correctSet.has(+b.dataset.i))b.classList.add('correct');
+  });
+}
+function finishQ(correct,q){
+  const exp=document.getElementById('exp');
+  exp.innerHTML=(correct?'<b>[정답]</b>':'<b>[오답]</b>')+'<br><b>해석:</b> '+escapeHtml(q.t)+'<br><b>설명:</b> '+q.e;
+  exp.classList.add('show');
+  document.getElementById('nextBtn').style.display='inline-block';
+  const sub=document.getElementById('subBtn');if(sub)sub.style.display='none';
+  const s=getStats();s.total++;if(correct){s.correct++;s.streak++;}else{s.streak=0;}setStats(s);
+  const dom=getDom();if(!dom[q.d])dom[q.d]={t:0,c:0};dom[q.d].t++;if(correct)dom[q.d].c++;setDom(dom);
+  let w=getWrong();
+  if(correct){if(reviewMode){w=w.filter(id=>id!==q.id);setWrong(w);}}
+  else{if(!w.includes(q.id)){w.push(q.id);setWrong(w);}}
+}
+function answerSingle(btn,idx,q){
+  if(document.querySelector('.opt.disabled'))return;
+  const correct=idx===q.a;
+  lockOpts(q);
+  if(!correct)btn.classList.add('wrong');
+  finishQ(correct,q);
+}
+function submitMulti(){
+  if(document.querySelector('.opt.disabled'))return;
+  const q=quizPool[qi];
+  const sel=[...document.querySelectorAll('.opt.sel')].map(b=>+b.dataset.i);
+  const need=new Set(q.a);
+  const correct=sel.length===q.a.length && sel.every(i=>need.has(i));
+  // mark wrong selections
+  document.querySelectorAll('.opt.sel').forEach(b=>{if(!need.has(+b.dataset.i))b.classList.add('wrong');});
+  lockOpts(q);
+  finishQ(correct,q);
+}
+
+/* ============== DND ============== */
+const DND_SETS=[
+ {name:"OSI 계층 ↔ 예시",prompt:"각 항목을 알맞은 OSI 계층에 매칭하세요.",
+  pairs:[["라우터 / IP 주소","Layer 3 (Network)"],["스위치 / MAC 주소","Layer 2 (Data Link)"],["케이블 / 전기신호","Layer 1 (Physical)"],["TCP / UDP / 포트번호","Layer 4 (Transport)"]],
+  note:"L1 물리, L2 데이터링크(스위치), L3 네트워크(라우터), L4 전송(TCP/UDP)."},
+ {name:"포트 번호 ↔ 서비스",prompt:"서비스를 알맞은 포트 번호에 매칭하세요.",
+  pairs:[["SSH","22"],["Telnet","23"],["DNS","53"],["HTTP","80"],["HTTPS","443"],["DHCP 서버","67"]],
+  note:"FTP 20/21, SSH 22, Telnet 23, SMTP 25, DNS 53, DHCP 67·68, HTTP 80, HTTPS 443."},
+ {name:"NAT 종류 ↔ 설명",prompt:"NAT 방식과 설명을 매칭하세요.",
+  pairs:[["내부 IP 하나당 공인 IP 하나 고정","Static NAT"],["풀(pool)에서 공인 IP를 일시 할당","Dynamic NAT"],["여러 내부 IP를 한 공인 IP+포트로","PAT (overload)"]],
+  note:"PAT(=NAT overload)가 가정용 공유기 방식."},
+ {name:"라우팅 출처 ↔ AD 값",prompt:"각 경로 출처의 기본 Administrative Distance를 매칭하세요.",
+  pairs:[["Directly Connected","0"],["Static Route","1"],["EIGRP","90"],["OSPF","110"],["RIP","120"]],
+  note:"AD가 낮을수록 우선. 직접연결0 → 스태틱1 → EIGRP90 → OSPF110 → RIP120."},
+ {name:"STP 포트 역할 ↔ 설명",prompt:"STP 포트 역할과 설명을 매칭하세요.",
+  pairs:[["Root Bridge로 가는 최적 포트","Root Port"],["세그먼트 전달 담당 포트","Designated Port"],["루프 방지로 차단된 포트","Blocking Port"]],
+  note:"각 비루트 스위치 Root Port 1개, 각 세그먼트 Designated Port 1개, 나머지 Blocking."},
+ {name:"ACL 종류 ↔ 특징",prompt:"ACL 종류와 특징을 매칭하세요.",
+  pairs:[["출발지 IP만 검사 (1~99)","Standard ACL"],["출발지·목적지·포트 검사 (100~199)","Extended ACL"],["목적지 가까이 배치","Standard 배치"],["출발지 가까이 배치","Extended 배치"]],
+  note:"표준=출발지만·목적지 근처 / 확장=세밀·출발지 근처."},
+ {name:"API/평면 ↔ 설명",prompt:"SDN 용어와 설명을 매칭하세요.",
+  pairs:[["컨트롤러→장비 방향","Southbound API"],["컨트롤러→앱 방향","Northbound API"],["경로를 결정하는 평면","Control Plane"],["패킷을 실제 전달하는 평면","Data Plane"]],
+  note:"Southbound=아래(장비)로, Northbound=위(앱)로. Control=결정, Data=전달."},
+];
+let dndCur=0,dragId=null;
+function initDndSelect(){
+  const sel=document.getElementById('dndSel');
+  if(sel.options.length===0){DND_SETS.forEach((s,i)=>{const o=document.createElement('option');o.value=i;o.textContent=s.name;sel.appendChild(o);});}
+  loadDnd();
+}
+function loadDnd(){
+  dndCur=+document.getElementById('dndSel').value||0;
+  const set=DND_SETS[dndCur];
+  document.getElementById('dndPrompt').textContent=set.prompt;
+  document.getElementById('dndScore').textContent='';
+  document.getElementById('dndExplain').classList.remove('show');
+  const bank=document.getElementById('dndBank'),targets=document.getElementById('dndTargets');
+  bank.innerHTML='';targets.innerHTML='';
+  shuffle(set.pairs.map((p,i)=>({txt:p[0],id:i}))).forEach(c=>{
+    const el=document.createElement('div');el.className='chip';el.draggable=true;el.textContent=c.txt;el.dataset.id=c.id;
+    el.ondragstart=()=>{dragId=c.id;};
+    bank.appendChild(el);
+  });
+  set.pairs.forEach((p,i)=>{
+    const slot=document.createElement('div');slot.className='slot';slot.dataset.answer=i;
+    slot.innerHTML=`<span class="label">${p[1]}</span>`;
+    slot.ondragover=e=>{e.preventDefault();slot.classList.add('over');};
+    slot.ondragleave=()=>slot.classList.remove('over');
+    slot.ondrop=e=>{e.preventDefault();slot.classList.remove('over');dropChip(slot);};
+    targets.appendChild(slot);
+  });
+}
+function dropChip(slot){
+  if(dragId===null)return;
+  const chip=document.querySelector('.chip[data-id="'+dragId+'"]');
+  if(!chip||chip.classList.contains('placed'))return;
+  const ex=slot.querySelector('.dropped');
+  if(ex){document.querySelector('.chip[data-id="'+ex.dataset.id+'"]').classList.remove('placed');ex.remove();}
+  const d=document.createElement('span');d.className='dropped';d.textContent=chip.textContent;d.dataset.id=dragId;
+  d.onclick=()=>{chip.classList.remove('placed');d.remove();slot.classList.remove('ok','no');};
+  slot.appendChild(d);chip.classList.add('placed');slot.classList.remove('ok','no');dragId=null;
+}
+function checkDnd(){
+  const slots=document.querySelectorAll('#dndTargets .slot');let ok=0;
+  slots.forEach(s=>{const d=s.querySelector('.dropped');s.classList.remove('ok','no');
+    if(d&&+d.dataset.id===+s.dataset.answer){s.classList.add('ok');ok++;}else s.classList.add('no');});
+  document.getElementById('dndScore').textContent=`${ok} / ${slots.length} 정답`;
+  const ex=document.getElementById('dndExplain');ex.innerHTML='해설: '+DND_SETS[dndCur].note;ex.classList.add('show');
+}
+
+/* ============== SUBNET TRAINER ============== */
+let subStreak=0,curSub=null;
+function ipToInt(o){return ((o[0]<<24)>>>0)+(o[1]<<16)+(o[2]<<8)+o[3];}
+function intToIp(n){return [(n>>>24)&255,(n>>>16)&255,(n>>>8)&255,n&255].join('.');}
+function maskFromCidr(c){return c===0?0:(0xffffffff<<(32-c))>>>0;}
+function rndOctet(){return Math.random()*256|0;}
+function newSubnet(){
+  const diff=document.getElementById('subDiff').value;
+  let cidr;
+  if(diff==='easy')cidr=24+(Math.random()*5|0);
+  else if(diff==='mid')cidr=16+(Math.random()*15|0);
+  else cidr=8+(Math.random()*23|0);
+  const ipInt=ipToInt([rndOctet(),rndOctet(),rndOctet(),rndOctet()])>>>0;
+  const mask=maskFromCidr(cidr);
+  const net=(ipInt&mask)>>>0, bcast=(net|(~mask>>>0))>>>0;
+  const hosts=Math.pow(2,32-cidr)-2;
+  const firstH=(net+1)>>>0, lastH=(bcast-1)>>>0;
+  const types=[
+    {q:`What is the <b>network address</b> of this host?`,a:intToIp(net),hint:`마스크 ${intToIp(mask)} 와 AND. 블록 크기로 배수 찾기`},
+    {q:`What is the <b>subnet mask</b> in dotted-decimal?`,a:intToIp(mask),hint:`/${cidr} → 1을 ${cidr}개 채운 뒤 8비트씩 변환`},
+    {q:`What is the <b>broadcast address</b>?`,a:intToIp(bcast),hint:`네트워크 주소 + 블록크기 − 1`},
+    {q:`How many <b>usable hosts</b>? (number only)`,a:String(hosts),hint:`2^(32−${cidr}) − 2`},
+    {q:`What is the <b>first usable host</b> address?`,a:intToIp(firstH),hint:`네트워크 주소 + 1`},
+    {q:`What is the <b>last usable host</b> address?`,a:intToIp(lastH),hint:`브로드캐스트 − 1`},
+  ];
+  const t=types[Math.random()*types.length|0];
+  curSub={ans:t.a,detail:`network ${intToIp(net)}/${cidr} · mask ${intToIp(mask)} · broadcast ${intToIp(bcast)} · usable ${hosts} · range ${intToIp(firstH)} ~ ${intToIp(lastH)}`};
+  document.getElementById('subBody').innerHTML=`
+    <p style="font-size:17px">Given: <code style="font-size:16px;background:#0b1220;padding:3px 8px;border-radius:5px;color:#7dd3fc">${intToIp(ipInt)} /${cidr}</code></p>
+    <p style="font-size:16px">${t.q}</p>
+    <input class="search" id="subAns" placeholder="답 입력 후 Enter">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn green" onclick="checkSubnet()">채점</button>
+      <button class="btn sec" onclick="document.getElementById('subHintBox').classList.toggle('show')">힌트</button>
+      <button class="btn sec" onclick="newSubnet()">다음</button>
+    </div>
+    <div class="explain" id="subHintBox">힌트: ${t.hint}</div>
+    <div class="explain" id="subResult"></div>`;
+  const inp=document.getElementById('subAns');inp.focus();
+  inp.onkeydown=e=>{if(e.key==='Enter')checkSubnet();};
+}
+function checkSubnet(){
+  const v=(document.getElementById('subAns').value||'').trim().replace(/\s+/g,'');
+  if(!v)return;
+  const ok=v===curSub.ans;
+  const r=document.getElementById('subResult');
+  r.innerHTML=(ok?'<b>[정답]</b> ':`<b>[오답]</b> 정답: <code>${curSub.ans}</code> · `)+curSub.detail;
+  r.classList.add('show');
+  subStreak=ok?subStreak+1:0;
+  document.getElementById('subStat').textContent=`연속 정답 ${subStreak}`;
+}
+
+/* ============== CLI SIMULATION ============== */
+const CLI_SCENARIOS=[
+ {name:"OSPF #1 — 기본 활성화",task:"R1에서 OSPF 프로세스 1을 활성화하고, 192.168.1.0/24 네트워크를 area 0에 광고하세요.",topo:"R1 — Gi0/0: 192.168.1.1/24",
+  steps:[{desc:"OSPF 프로세스 1 진입",pat:[/^router\s+ospf\s+1$/]},{desc:"192.168.1.0 네트워크 area 0 광고",pat:[/^network\s+192\.168\.1\.0\s+0\.0\.0\.255\s+area\s+0$/]}],
+  answer:["router ospf 1","network 192.168.1.0 0.0.0.255 area 0"]},
+ {name:"OSPF #2 — Router ID + 두 네트워크",task:"R2에서 OSPF 프로세스 1을 켜고, Router ID를 2.2.2.2로 지정한 뒤 10.0.0.0/24와 10.0.1.0/24를 area 0에 광고하세요.",topo:"R2 — Gi0/0: 10.0.0.1/24, Gi0/1: 10.0.1.1/24",
+  steps:[{desc:"OSPF 프로세스 1 진입",pat:[/^router\s+ospf\s+1$/]},{desc:"Router ID 2.2.2.2",pat:[/^router-id\s+2\.2\.2\.2$/]},{desc:"10.0.0.0 area 0 광고",pat:[/^network\s+10\.0\.0\.0\s+0\.0\.0\.255\s+area\s+0$/]},{desc:"10.0.1.0 area 0 광고",pat:[/^network\s+10\.0\.1\.0\s+0\.0\.0\.255\s+area\s+0$/]}],
+  answer:["router ospf 1","router-id 2.2.2.2","network 10.0.0.0 0.0.0.255 area 0","network 10.0.1.0 0.0.0.255 area 0"]},
+ {name:"표준 ACL #1",task:"표준 ACL 10을 만들어 192.168.10.0/24만 허용하고, 인터페이스 Gi0/1 아웃바운드에 적용하세요.",topo:"표준 ACL은 목적지 가깝게 — Gi0/1 out에 적용",
+  steps:[{desc:"192.168.10.0/24 허용 규칙",pat:[/^access-list\s+10\s+permit\s+192\.168\.10\.0\s+0\.0\.0\.255$/]},{desc:"인터페이스 Gi0/1 진입",pat:[/^int(erface)?\s+\S*0\/1$/i]},{desc:"ACL 10 outbound 적용",pat:[/^ip\s+access-group\s+10\s+out$/]}],
+  answer:["access-list 10 permit 192.168.10.0 0.0.0.255","interface Gi0/1","ip access-group 10 out"]},
+ {name:"확장 ACL #1 — Telnet 차단",task:"확장 ACL 100을 만들어 192.168.1.0/24 → 서버 10.1.1.5의 Telnet(23)을 차단하고, 그 외 IP는 허용. Gi0/0 인바운드에 적용.",topo:"확장 ACL은 출발지 가깝게 — Gi0/0 in에 적용",
+  steps:[{desc:"telnet(23) 차단 규칙",pat:[/^access-list\s+100\s+deny\s+tcp\s+192\.168\.1\.0\s+0\.0\.0\.255\s+host\s+10\.1\.1\.5\s+eq\s+(23|telnet)$/]},{desc:"나머지 IP 허용",pat:[/^access-list\s+100\s+permit\s+ip\s+any\s+any$/]},{desc:"인터페이스 Gi0/0 진입",pat:[/^int(erface)?\s+\S*0\/0$/i]},{desc:"ACL 100 inbound 적용",pat:[/^ip\s+access-group\s+100\s+in$/]}],
+  answer:["access-list 100 deny tcp 192.168.1.0 0.0.0.255 host 10.1.1.5 eq 23","access-list 100 permit ip any any","interface Gi0/0","ip access-group 100 in"]},
+ {name:"VLAN + 트렁크",task:"스위치에 VLAN 10(SALES)을 만들고, Fa0/2를 VLAN 10 access 포트로, Gi0/1을 트렁크로 설정하세요.",topo:"SW1 — Fa0/2: PC, Gi0/1: 다른 스위치로 연결",
+  steps:[{desc:"VLAN 10 생성",pat:[/^vlan\s+10$/]},{desc:"이름 SALES",pat:[/^name\s+sales$/i]},{desc:"Fa0/2 access 모드",pat:[/^switchport\s+mode\s+access$/]},{desc:"Fa0/2를 VLAN 10에 할당",pat:[/^switchport\s+access\s+vlan\s+10$/]},{desc:"Gi0/1 트렁크 모드",pat:[/^switchport\s+mode\s+trunk$/]}],
+  answer:["vlan 10","name SALES","interface Fa0/2","switchport mode access","switchport access vlan 10","interface Gi0/1","switchport mode trunk"]},
+];
+let cliCur=0;
+function initCli(){
+  const sel=document.getElementById('cliSel');
+  if(sel.options.length===0){CLI_SCENARIOS.forEach((s,i)=>{const o=document.createElement('option');o.value=i;o.textContent=s.name;sel.appendChild(o);});}
+  loadCli();
+}
+function loadCli(){
+  cliCur=+document.getElementById('cliSel').value||0;
+  const s=CLI_SCENARIOS[cliCur];
+  document.getElementById('cliTask').innerHTML=s.task;
+  document.getElementById('cliTopo').textContent=s.topo;
+  document.getElementById('cliInput').value='';
+  document.getElementById('cliHint').classList.remove('show');
+  document.getElementById('cliResult').classList.remove('show');
+  document.getElementById('cliStat').textContent='';
+}
+function checkCli(){
+  const s=CLI_SCENARIOS[cliCur];
+  const lines=document.getElementById('cliInput').value.split('\n').map(l=>l.trim().toLowerCase().replace(/\s+/g,' ')).filter(x=>x);
+  let html='<b>채점 결과</b><br>';let done=0;
+  s.steps.forEach(st=>{const hit=lines.some(l=>st.pat.some(p=>p.test(l)));if(hit)done++;html+=(hit?'[O] ':'[ ] ')+st.desc+'<br>';});
+  const res=document.getElementById('cliResult');const pass=done===s.steps.length;
+  res.innerHTML=html+`<br>${done} / ${s.steps.length} 완료`+(pass?' — 모두 정확합니다.':' — 부족한 항목을 확인하세요.');
+  res.classList.add('show');
+  document.getElementById('cliStat').textContent=pass?'통과':`${done}/${s.steps.length}`;
+}
+function toggleHint(){
+  const s=CLI_SCENARIOS[cliCur];const h=document.getElementById('cliHint');
+  h.innerHTML='<b>필요한 단계</b><br>'+s.steps.map((x,i)=>`${i+1}. ${x.desc}`).join('<br>');
+  h.classList.toggle('show');
+}
+function showCliAnswer(){
+  const s=CLI_SCENARIOS[cliCur];const res=document.getElementById('cliResult');
+  res.innerHTML='<b>예시 정답</b><br><code style="display:block;white-space:pre;background:#0b1220;color:#7dd3fc;padding:10px;border-radius:6px;margin-top:6px">'+escapeHtml(s.answer.join('\n'))+'</code><br><span style="color:var(--muted);font-size:13px">인터페이스 표기·eq 23/telnet 같은 동등 표현은 정답 처리됩니다.</span>';
+  res.classList.add('show');
+}
+
+/* ============== VOCAB ============== */
+const VOCAB=[
+ {en:"Subnet",ko:"서브넷 (네트워크를 더 작게 나눈 단위)",note:"subnetting=나누기"},
+ {en:"Subnet mask",ko:"서브넷 마스크 (네트워크/호스트 구분)",note:"255.255.255.0=/24"},
+ {en:"Default gateway",ko:"기본 게이트웨이 (외부로 나가는 출구)"},
+ {en:"Broadcast",ko:"브로드캐스트 (전체에게 전송)",note:"↔ unicast, multicast"},
+ {en:"Encapsulation",ko:"캡슐화 (헤더를 씌우는 과정)"},
+ {en:"Frame / Packet / Segment",ko:"프레임(L2)/패킷(L3)/세그먼트(L4)"},
+ {en:"Routing table",ko:"라우팅 테이블 (경로 정보 표)"},
+ {en:"Next hop",ko:"넥스트 홉 (다음으로 보낼 라우터 IP)"},
+ {en:"Hop",ko:"홉 (라우터를 한 번 거침)"},
+ {en:"Latency",ko:"지연 시간"},
+ {en:"Bandwidth",ko:"대역폭 (회선 용량)"},
+ {en:"Throughput",ko:"처리량 (실제 전송량)"},
+ {en:"Duplex",ko:"듀플렉스 (full=양방향 동시)"},
+ {en:"Trunk",ko:"트렁크 (여러 VLAN 운반 링크)"},
+ {en:"Access port",ko:"액세스 포트 (단일 VLAN 단말)"},
+ {en:"Native VLAN",ko:"네이티브 VLAN (트렁크서 태그없이 전송)"},
+ {en:"Adjacency",ko:"인접 관계 (OSPF 이웃)",note:"neighbor adjacency"},
+ {en:"Convergence",ko:"수렴 (모두 경로 합의)"},
+ {en:"Redundancy",ko:"이중화 (예비 경로/장비)"},
+ {en:"Failover",ko:"장애 절체 (예비로 전환)"},
+ {en:"Metric",ko:"메트릭 (경로 비용 계산값)"},
+ {en:"Administrative distance",ko:"관리 거리 (출처 신뢰도, 낮을수록 우선)"},
+ {en:"Longest prefix match",ko:"롱기스트 프리픽스 매치 (가장 구체적 경로 우선)"},
+ {en:"Floating static route",ko:"플로팅 스태틱 (AD 높인 백업 경로)"},
+ {en:"Advertise",ko:"광고하다 (경로를 알리다)",note:"OSPF network 명령"},
+ {en:"Propagate",ko:"전파하다 (정보가 퍼지다)"},
+ {en:"Mitigate",ko:"완화하다 (공격·위험을 줄이다)"},
+ {en:"Threat / Vulnerability / Exploit",ko:"위협 / 취약점 / 악용"},
+ {en:"Authentication",ko:"인증 (누구인지 확인)"},
+ {en:"Authorization",ko:"인가 (권한 부여)"},
+ {en:"Accounting",ko:"어카운팅 (행위 기록)",note:"AAA의 3번째 A"},
+ {en:"Snooping",ko:"스누핑 (트래픽 감시)",note:"DHCP Snooping"},
+ {en:"Spoofing",ko:"스푸핑 (출처 위조)"},
+ {en:"Inbound / Outbound",ko:"인바운드(들어오는)/아웃바운드(나가는)"},
+ {en:"Deny / Permit",ko:"거부 / 허용 (ACL 동작)"},
+ {en:"Implicit deny",ko:"암묵적 거부 (ACL 끝 자동 차단)"},
+ {en:"Wildcard mask",ko:"와일드카드 마스크 (0=일치, 1=무시)"},
+ {en:"Negotiate",ko:"협상하다 (LACP/DTP 자동협상)"},
+ {en:"Flood",ko:"플러딩 (모든 포트로 내보냄)"},
+ {en:"Loop",ko:"루프 (무한 순환)",note:"STP가 방지"},
+ {en:"Designated",ko:"지정된 (Designated Port/Router)"},
+ {en:"Preempt",ko:"선점하다 (우선순위 높은 장비가 active 회복)"},
+ {en:"Lease",ko:"임대 (DHCP IP 대여 기간)"},
+ {en:"Resolve",ko:"해석하다 (DNS 이름→IP)"},
+ {en:"Overload",ko:"오버로드 (PAT의 다른 이름)"},
+ {en:"Translate",ko:"변환하다 (NAT 주소 변경)"},
+ {en:"Verify",ko:"검증하다 (show 명령 확인)"},
+ {en:"Configure",ko:"설정하다 (config 모드)"},
+ {en:"Assign",ko:"할당하다 (VLAN/IP 부여)"},
+ {en:"Forward",ko:"전달하다 (프레임/패킷 보냄)"},
+ {en:"Drop",ko:"폐기하다 (패킷 버림)"},
+ {en:"Encrypt / Decrypt",ko:"암호화 / 복호화"},
+ {en:"Scalable",ko:"확장 가능한"},
+ {en:"Provision",ko:"프로비저닝 (자동 구성/배포)"},
+ {en:"Idempotent",ko:"멱등한 (여러 번 실행해도 결과 동일)",note:"Ansible 특징"},
+ {en:"Payload",ko:"페이로드 (실제 데이터 본문)"},
+ {en:"Header",ko:"헤더 (제어 정보 앞부분)"},
+ {en:"Northbound / Southbound API",ko:"노스바운드(앱쪽)/사우스바운드(장비쪽) API"},
+ {en:"Control plane / Data plane",ko:"컨트롤 평면(경로결정)/데이터 평면(전달)"},
+ {en:"Hypervisor",ko:"하이퍼바이저 (VM에 자원 분배)"},
+ {en:"Quarantine",ko:"격리하다 (감염 장비 분리)"},
+];
+let vpool=[],vi=0;
+function initVocab(){if(vpool.length===0)vpool=VOCAB.slice();renderCard();renderVocabList();}
+function renderCard(){
+  const c=vpool[vi];
+  document.getElementById('flash').classList.remove('flip');
+  document.getElementById('fEn').textContent=c.en;
+  document.getElementById('fKo').textContent=c.ko;
+  document.getElementById('fNote').textContent=c.note||'';
+  document.getElementById('vIdx').textContent=`${vi+1} / ${vpool.length}`;
+}
+function nextCard(){vi=(vi+1)%vpool.length;renderCard();}
+function prevCard(){vi=(vi-1+vpool.length)%vpool.length;renderCard();}
+function shuffleVocab(){vpool=shuffle(VOCAB);vi=0;renderCard();}
+function renderVocabList(){
+  const q=(document.getElementById('vSearch').value||'').toLowerCase();
+  const list=document.getElementById('vocabList');list.innerHTML='';
+  VOCAB.filter(v=>v.en.toLowerCase().includes(q)||v.ko.includes(q)).forEach(v=>{
+    const r=document.createElement('div');r.className='vocab-row';
+    r.innerHTML=`<span class="en">${escapeHtml(v.en)}</span><span>${escapeHtml(v.ko)}</span>`;
+    list.appendChild(r);
+  });
+}
+
+/* init */
+renderHome();
+</script>
+</body>
+</html>
