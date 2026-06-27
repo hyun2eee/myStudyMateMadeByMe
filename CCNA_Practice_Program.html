@@ -944,7 +944,7 @@ function renderVocabList(){
 
 /* ============== AI 튜터 (Anthropic Claude) ============== */
 let tutorHist=[];
-const TUTOR_SYS="You are a friendly, encouraging CCNA 200-301 tutor. The learner is Korean, studying for the exam in English but more comfortable in Korean. Always answer in Korean, but keep technical and exam terms in English (e.g., OSPF, administrative distance, trunk). Be concise and clear, and use simple examples. When asked about a specific multiple-choice question, explain why the correct option is right and briefly why each other option is wrong.";
+const TUTOR_SYS="You are a friendly, encouraging CCNA 200-301 tutor. The learner is Korean, studying for the exam in English but more comfortable in Korean. Always answer in Korean, but keep technical and exam terms in English (e.g., OSPF, administrative distance, trunk). Be concise and clear, and use simple examples. When asked about a specific multiple-choice question, explain why the correct option is right and briefly why each other option is wrong. Do not use emojis in your replies.";
 function switchTo(v){
   document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.v===v));
   document.querySelectorAll('.view').forEach(x=>x.classList.toggle('active',x.id===v));
@@ -972,21 +972,33 @@ function saveTutorSettings(){
 function mdToHtml(s){
   s=escapeHtml(s);
   const blocks=[];
-  s=s.replace(/```[a-z]*\n?([\s\S]*?)```/gi,(m,c)=>{blocks.push(c.replace(/\n$/,''));return ''+(blocks.length-1)+'';});
+  s=s.replace(/```[a-z]*\n?([\s\S]*?)```/gi,(m,c)=>{blocks.push(c.replace(/\n$/,''));return '@@CB'+(blocks.length-1)+'@@';});
   s=s.replace(/`([^`]+)`/g,'<code>$1</code>');
   s=s.replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>');
   s=s.replace(/^#{1,6}\s*(.+)$/gm,'<b>$1</b>');
-  const lines=s.split('\n');let out='',inUl=false,inOl=false;
+  const lines=s.split('\n');let out='',inUl=false,inOl=false,i=0;
   const close=()=>{if(inUl){out+='</ul>';inUl=false;}if(inOl){out+='</ol>';inOl=false;}};
-  lines.forEach(ln=>{
+  const isRow=l=>/^\s*\|.*\|\s*$/.test(l);
+  const isSep=l=>/-/.test(l)&&/^\s*\|?[\s:|-]+\|?\s*$/.test(l);
+  const cells=l=>l.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(c=>c.trim());
+  while(i<lines.length){
+    const ln=lines[i];
+    if(isRow(ln)&&i+1<lines.length&&isSep(lines[i+1])){
+      close();
+      let html='<table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:13px">';
+      html+='<tr>'+cells(ln).map(c=>'<th style="border:1px solid var(--line);padding:6px 8px;background:var(--panel)">'+c+'</th>').join('')+'</tr>';
+      i+=2;
+      while(i<lines.length&&isRow(lines[i])){html+='<tr>'+cells(lines[i]).map(c=>'<td style="border:1px solid var(--line);padding:6px 8px">'+c+'</td>').join('')+'</tr>';i++;}
+      out+=html+'</table>';continue;
+    }
     const mu=ln.match(/^\s*[-*]\s+(.*)$/),mo=ln.match(/^\s*\d+\.\s+(.*)$/);
-    if(/^\d+$/.test(ln.trim())){close();out+=ln.trim();}
-    else if(mu){if(!inUl){close();out+='<ul style="margin:4px 0 4px 18px">';inUl=true;}out+='<li>'+mu[1]+'</li>';}
+    if(mu){if(!inUl){close();out+='<ul style="margin:4px 0 4px 18px">';inUl=true;}out+='<li>'+mu[1]+'</li>';}
     else if(mo){if(!inOl){close();out+='<ol style="margin:4px 0 4px 18px">';inOl=true;}out+='<li>'+mo[1]+'</li>';}
     else{close();out+=ln+'<br>';}
-  });
+    i++;
+  }
   close();
-  return out.replace(/(\d+)(<br>)?/g,(m,i)=>'<pre class="exhibit">'+blocks[+i]+'</pre>');
+  return out.replace(/@@CB(\d+)@@(<br>)?/g,(m,idx)=>'<pre class="exhibit">'+blocks[+idx]+'</pre>');
 }
 function renderChat(){
   const box=document.getElementById('chatBox');if(!box)return;
@@ -1048,6 +1060,12 @@ function initExplain(){
     document.getElementById('exArea').innerHTML='<p style="color:var(--warn);font-size:14px">먼저 "AI 튜터" 탭에서 Anthropic API 키를 입력·저장하세요.</p>';return;}
   if(!curExplain)document.getElementById('exArea').innerHTML='<p style="color:var(--muted);font-size:14px">"새 문제 받기"를 누르면 AI가 개념을 묻습니다. 당신의 설명을 채점해 드립니다.</p>';
 }
+let exHist=[];
+function renderExChat(){
+  const box=document.getElementById('exChat');if(!box)return;
+  box.innerHTML=exHist.map(m=>`<div class="msg ${m.role==='user'?'user':'ai'}">${m.role==='user'?escapeHtml(m.content):mdToHtml(m.content)}</div>`).join('')+(window._exBusy?'<div class="msg ai think">생각 중…</div>':'');
+  box.scrollTop=box.scrollHeight;
+}
 function newExplainQuestion(){
   if(!localStorage.getItem('ccnaApiKey')){alert('먼저 AI 튜터 탭에서 API 키를 저장하세요.');return;}
   const mastered=new Set(getMastered());
@@ -1055,56 +1073,63 @@ function newExplainQuestion(){
   let pool=wrong.length?wrong:QUESTIONS.map(q=>q.id).filter(id=>!mastered.has(id));
   if(pool.length===0)pool=QUESTIONS.map(q=>q.id);
   const id=pool[Math.random()*pool.length|0];
-  curExplain=QUESTIONS[id];
+  curExplain=QUESTIONS[id];exHist=[];window._exBusy=false;
+  exHist.push({role:'assistant',content:`이 개념을 당신의 말로 설명해 주세요. 정답이 무엇이고 왜 그런지 설명하면 됩니다. 제가 듣고 추가 질문을 드릴게요.\n\n**Q.** ${curExplain.q}\n\n(해석: ${curExplain.t})`});
   document.getElementById('exArea').innerHTML=
-    `<div class="msg ai"><b>AI:</b> 다음 개념을 당신의 말로 설명해 주세요. 정답이 무엇이고 왜 그런지 설명하면 됩니다.<br><br><b>Q.</b> ${escapeHtml(curExplain.q)}<br><span style="color:var(--muted);font-size:13px">해석: ${escapeHtml(curExplain.t)}</span></div>
-     <textarea id="exInput" rows="4" placeholder="여기에 한국어 또는 영어로 설명을 작성하세요…" style="width:100%;margin-top:10px"></textarea>
-     <button class="btn green" onclick="submitExplain()">설명 제출</button>
-     <div id="exFeedback"></div>`;
-  document.getElementById('exInput').focus();
+    `<div id="exChat"></div>
+     <div id="exScore"></div>
+     <div id="exControls" style="display:flex;gap:8px;margin-top:10px">
+       <textarea id="exInput" rows="3" placeholder="설명을 작성하고 Enter (또는 보내기)…" style="flex:1;margin:0"></textarea>
+       <button class="btn green" onclick="sendExplainTurn()">보내기</button>
+     </div>`;
+  renderExChat();
+  const inp=document.getElementById('exInput');inp.focus();
+  inp.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendExplainTurn();}};
 }
-function retryExplain(){const fb=document.getElementById('exFeedback');if(fb)fb.innerHTML='';const inp=document.getElementById('exInput');if(inp)inp.focus();}
-async function submitExplain(){
+async function sendExplainTurn(){
   const key=(localStorage.getItem('ccnaApiKey')||'').trim();
-  if(!key||!curExplain)return;
-  const text=(document.getElementById('exInput').value||'').trim();
+  if(!key||!curExplain||window._exBusy)return;
+  const ta=document.getElementById('exInput');
+  const text=(ta.value||'').trim();
   if(!text){alert('설명을 입력하세요.');return;}
-  const fb=document.getElementById('exFeedback');
-  fb.innerHTML='<p class="msg ai think">채점 중…</p>';
+  ta.value='';
+  exHist.push({role:'user',content:text});
+  window._exBusy=true;renderExChat();
   const q=curExplain;
-  const opts=q.o.map((t,i)=>String.fromCharCode(65+i)+'. '+t).join('\n');
+  const opts=q.o.map((t,i)=>String.fromCharCode(65+i)+'. '+t).join(' / ');
   const ans=Array.isArray(q.a)?q.a.map(i=>String.fromCharCode(65+i)).join(', '):String.fromCharCode(65+q.a);
-  const sys="You are a strict but encouraging CCNA examiner using the Feynman technique. You receive a CCNA question, its correct answer, a reference explanation, the pass TARGET, and the learner's free-form explanation (Korean or English). Judge how accurately and completely the learner's explanation matches the correct concept. Award high scores when the key idea is captured even if wording differs; deduct for missing or wrong points. Respond with ONLY a JSON object and nothing else: {\"score\": <integer 0-100>, \"feedback\": \"<concise Korean feedback: what was correct and what was missing or wrong>\", \"hint\": \"<concise Korean hint to improve if below target, else empty>\"}";
-  const user=`TARGET=${exTarget}\n[Question] ${q.q}\n[Options]\n${opts}\n[Correct answer] ${ans}\n[Reference explanation] ${q.e}\n[Learner's explanation]\n${text}`;
+  const sys=`You are a warm, Socratic CCNA tutor using the Feynman technique. Chat in Korean (keep technical/exam terms in English). The learner explains a concept in their own words; engage in a real back-and-forth: briefly affirm what is correct, point out what is missing or wrong, and ask ONE focused follow-up question to push them deeper — unless they have essentially mastered it. Keep each reply short (2-5 sentences). Do not use emojis. After EACH learner message, rate how complete and accurate their CUMULATIVE explanation is so far. Respond with ONLY a JSON object and nothing else: {"reply":"<your Korean conversational reply; include one follow-up question unless mastered>","score":<integer 0-100>}. When score >= ${exTarget}, congratulate, give a one-line summary of the key point, and do NOT ask another question.\nConcept being assessed:\n[Question] ${q.q}\n[Options] ${opts}\n[Correct answer] ${ans}\n[Reference explanation] ${q.e}\nTARGET=${exTarget}`;
+  const apiMsgs=exHist.slice(1).map(m=>({role:m.role,content:m.content}));
   try{
     const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
       headers:{'x-api-key':key,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:getModel(),max_tokens:600,system:sys,messages:[{role:'user',content:user}]})});
+      body:JSON.stringify({model:getModel(),max_tokens:700,system:sys,messages:apiMsgs})});
     const data=await res.json();
     if(data.error)throw new Error(data.error.message||'API 오류');
-    const raw=(data.content||[]).map(c=>c.text||'').join('');
-    const jm=raw.match(/\{[\s\S]*\}/);
-    if(!jm)throw new Error('채점 형식 오류. 다시 시도하세요.');
-    const r=JSON.parse(jm[0]);
-    const score=Math.max(0,Math.min(100,Math.round(Number(r.score)||0)));
-    exSessionScores.push(score);
-    const pass=score>=exTarget;
-    if(pass){const ms=getMastered();if(!ms.includes(q.id)){ms.push(q.id);setMastered(ms);}}
-    const col=pass?'var(--accent2)':(score>=exTarget-15?'var(--warn)':'var(--bad)');
-    fb.innerHTML=
-      `<div class="explain show">
-         <div style="font-weight:700;font-size:16px">이번 설명 정확도: ${score}% / 목표 ${exTarget}%</div>
-         <div class="progressbar"><div style="width:${score}%;background:${col}"></div></div>
-         <div style="margin-top:6px;font-size:16px"><b>${pass?'성공! 통과했습니다.':'조금만 더!'}</b></div>
-         <div style="margin-top:6px"><b>피드백:</b> ${escapeHtml(r.feedback||'')}</div>`+
-         (!pass&&r.hint?`<div style="margin-top:6px"><b>힌트:</b> ${escapeHtml(r.hint)}</div>`:'')+
-         `<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">`+
-         (pass?`<button class="btn green" onclick="newExplainQuestion()">다음 문제</button>`
-              :`<button class="btn" onclick="retryExplain()">다시 설명</button><button class="btn sec" onclick="newExplainQuestion()">다른 문제</button>`)+
-       `</div></div>`;
-    renderExStats();
+    const rawtext=(data.content||[]).map(c=>c.text||'').join('');
+    const jm=rawtext.match(/\{[\s\S]*\}/);
+    let reply,score=null;
+    if(jm){try{const r=JSON.parse(jm[0]);reply=r.reply;score=Math.max(0,Math.min(100,Math.round(Number(r.score)||0)));}catch(e){reply=rawtext;}}
+    else reply=rawtext;
+    window._exBusy=false;
+    exHist.push({role:'assistant',content:reply||'(빈 응답)'});
+    renderExChat();
+    if(score!=null){
+      exSessionScores.push(score);
+      const pass=score>=exTarget;
+      const col=pass?'var(--accent2)':(score>=exTarget-15?'var(--warn)':'var(--bad)');
+      const sc=document.getElementById('exScore');sc.className='explain show';
+      sc.innerHTML=`<div style="font-weight:700">현재 이해도: ${score}% / 목표 ${exTarget}%</div><div class="progressbar"><div style="width:${score}%;background:${col}"></div></div>`;
+      if(pass){
+        const ms=getMastered();if(!ms.includes(q.id)){ms.push(q.id);setMastered(ms);}
+        document.getElementById('exControls').innerHTML=`<div style="font-size:16px;font-weight:700;color:var(--accent2)">성공! 통과했습니다.</div><button class="btn green" onclick="newExplainQuestion()">다음 개념</button>`;
+        renderExStats();
+      }
+    }
   }catch(e){
-    fb.innerHTML='<div class="explain show">[오류] '+escapeHtml(e.message)+'<br>API 키·크레딧·모델명을 확인하거나 다시 시도하세요. <button class="btn sec" style="margin-top:6px" onclick="submitExplain()">다시 채점</button></div>';
+    window._exBusy=false;renderExChat();
+    const sc=document.getElementById('exScore');sc.className='explain show';
+    sc.innerHTML='[오류] '+escapeHtml(e.message)+' — 키·크레딧·모델명을 확인하고 다시 보내세요.';
   }
 }
 
