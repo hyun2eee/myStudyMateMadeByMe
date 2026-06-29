@@ -279,6 +279,13 @@
   </div>
   <div class="card">
     <h3>전체 용어 목록</h3>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+      <input class="search" id="nvEn" placeholder="English" style="flex:1;min-width:110px;margin:0">
+      <input class="search" id="nvKo" placeholder="한국어 뜻" style="flex:1;min-width:110px;margin:0">
+      <input class="search" id="nvNote" placeholder="비고(선택)" style="flex:1;min-width:90px;margin:0">
+      <button class="btn" onclick="addVocabManual()">추가</button>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin:0 0 8px">AI 튜터에게 "이 단어 단어장에 추가해줘"라고 해도 자동으로 추가됩니다.</p>
     <input class="search" id="vSearch" placeholder="검색 (영어/한글)…" oninput="renderVocabList()">
     <div id="vocabList"></div>
   </div>
@@ -920,7 +927,27 @@ const VOCAB=[
  {en:"Quarantine",ko:"격리하다 (감염 장비 분리)"},
 ];
 let vpool=[],vi=0;
-function initVocab(){if(vpool.length===0)vpool=VOCAB.slice();renderCard();renderVocabList();}
+function getCustomVocab(){try{return JSON.parse(localStorage.getItem('ccnaVocab')||'[]');}catch(e){return [];}}
+function setCustomVocab(a){localStorage.setItem('ccnaVocab',JSON.stringify(a));}
+function getAllVocab(){return VOCAB.concat(getCustomVocab());}
+function addVocab(en,ko,note){
+  en=(en||'').trim();ko=(ko||'').trim();note=(note||'').trim();
+  if(!en||!ko)return false;
+  if(getAllVocab().some(v=>v.en.toLowerCase()===en.toLowerCase()))return false;
+  const cv=getCustomVocab();cv.push({en,ko,note,custom:true});setCustomVocab(cv);return true;
+}
+function delVocab(en){
+  setCustomVocab(getCustomVocab().filter(v=>v.en!==en));
+  vpool=getAllVocab();if(vi>=vpool.length)vi=0;renderVocabList();renderCard();
+}
+function addVocabManual(){
+  const en=document.getElementById('nvEn').value,ko=document.getElementById('nvKo').value,note=document.getElementById('nvNote').value;
+  if(!en.trim()||!ko.trim()){alert('영어 단어와 한국어 뜻을 모두 입력하세요.');return;}
+  if(!addVocab(en,ko,note)){alert('이미 있는 단어이거나 추가할 수 없습니다.');return;}
+  document.getElementById('nvEn').value='';document.getElementById('nvKo').value='';document.getElementById('nvNote').value='';
+  vpool=getAllVocab();renderVocabList();
+}
+function initVocab(){vpool=getAllVocab();if(vi>=vpool.length)vi=0;renderCard();renderVocabList();}
 function renderCard(){
   const c=vpool[vi];
   document.getElementById('flash').classList.remove('flip');
@@ -931,20 +958,22 @@ function renderCard(){
 }
 function nextCard(){vi=(vi+1)%vpool.length;renderCard();}
 function prevCard(){vi=(vi-1+vpool.length)%vpool.length;renderCard();}
-function shuffleVocab(){vpool=shuffle(VOCAB);vi=0;renderCard();}
+function shuffleVocab(){vpool=shuffle(getAllVocab());vi=0;renderCard();}
 function renderVocabList(){
   const q=(document.getElementById('vSearch').value||'').toLowerCase();
   const list=document.getElementById('vocabList');list.innerHTML='';
-  VOCAB.filter(v=>v.en.toLowerCase().includes(q)||v.ko.includes(q)).forEach(v=>{
+  getAllVocab().filter(v=>v.en.toLowerCase().includes(q)||v.ko.includes(q)).forEach(v=>{
     const r=document.createElement('div');r.className='vocab-row';
-    r.innerHTML=`<span class="en">${escapeHtml(v.en)}</span><span>${escapeHtml(v.ko)}</span>`;
+    const tag=v.custom?' <span style="font-size:11px;color:var(--accent2)">[내 단어]</span>':'';
+    const del=v.custom?`<button class="btn sec" style="font-size:12px;padding:2px 8px;margin-left:8px" onclick="delVocab('${v.en.replace(/'/g,"\\'")}')">삭제</button>`:'';
+    r.innerHTML=`<span class="en">${escapeHtml(v.en)}${tag}</span><span>${escapeHtml(v.ko)}${del}</span>`;
     list.appendChild(r);
   });
 }
 
 /* ============== AI 튜터 (Anthropic Claude) ============== */
 let tutorHist=[];
-const TUTOR_SYS="You are a friendly, encouraging CCNA 200-301 tutor. The learner is Korean, studying for the exam in English but more comfortable in Korean. Always answer in Korean, but keep technical and exam terms in English (e.g., OSPF, administrative distance, trunk). Be concise and clear, and use simple examples. When asked about a specific multiple-choice question, explain why the correct option is right and briefly why each other option is wrong. Do not use emojis in your replies.";
+const TUTOR_SYS="You are a friendly, encouraging CCNA 200-301 tutor. The learner is Korean, studying for the exam in English but more comfortable in Korean. Always answer in Korean, but keep technical and exam terms in English (e.g., OSPF, administrative distance, trunk). Be concise and clear, and use simple examples. When asked about a specific multiple-choice question, explain why the correct option is right and briefly why each other option is wrong. Do not use emojis in your replies. If the user asks you to add a word or term to their vocabulary list (단어장/단어장에 추가), include each term on its own line in EXACTLY this format: [[VOCAB] <English term> :: <Korean meaning> :: <short note or leave empty>]] — the app detects these lines and adds them to the vocabulary automatically. Still reply conversationally as well.";
 function switchTo(v){
   document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.v===v));
   document.querySelectorAll('.view').forEach(x=>x.classList.toggle('active',x.id===v));
@@ -1020,7 +1049,15 @@ async function sendTutor(preset){
       body:JSON.stringify({model:getModel(),max_tokens:1024,system:TUTOR_SYS,messages:tutorHist})});
     const data=await res.json();
     if(data.error)throw new Error(data.error.message||'API 오류');
-    const reply=(data.content||[]).map(c=>c.text||'').join('').trim()||'(빈 응답)';
+    let reply=(data.content||[]).map(c=>c.text||'').join('').trim()||'(빈 응답)';
+    const added=[];
+    reply=reply.replace(/\[\[VOCAB\]\s*([^\]]+?)\s*\]\]/g,(m,inner)=>{
+      const p=inner.split('::').map(x=>x.trim());
+      if(p[0]&&p[1]&&addVocab(p[0],p[1],p[2]||''))added.push(p[0]);
+      return '';
+    }).trim();
+    if(added.length){reply+='\n\n('+added.length+'개 단어를 단어장에 추가했습니다: '+added.join(', ')+')';
+      if(document.getElementById('vocabList'))renderVocabList();}
     tutorHist.push({role:'assistant',content:reply});
   }catch(e){
     tutorHist.push({role:'assistant',content:'[오류] '+e.message+'\n· API 키가 올바른지, 크레딧 잔액이 있는지, 모델명이 맞는지 확인하세요.'});
