@@ -181,6 +181,10 @@
       </span>
       <span id="qcount"></span>
     </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+      <button class="btn" style="font-size:13px;padding:7px 14px" onclick="generateAIQuestion()">AI 새 문제 생성</button>
+      <span style="font-size:12px;color:var(--muted)">선택한 도메인으로 AI가 무한히 새 문제를 만듭니다 (AI 튜터 키 사용)</span>
+    </div>
     <div class="progressbar"><div id="qbar"></div></div>
     <div id="quizBody"></div>
   </div>
@@ -607,10 +611,42 @@ function startReview(){
 /* ============== QUIZ ENGINE (single + multi + exhibit) ============== */
 let quizPool=[],qi=0;
 function startQuiz(){
-  reviewMode=false;
+  reviewMode=false;window.aiMode=false;
   const dom=document.getElementById('domainSel').value;
   quizPool=shuffle(QUESTIONS.filter(q=>dom==='all'||q.d===dom));
   qi=0;renderQ();
+}
+let aiCounter=0;
+function nextQuestion(){if(window.aiMode){if(qi<quizPool.length-1){qi++;renderQ();}else{generateAIQuestion();}}else{qi++;renderQ();}}
+async function generateAIQuestion(){
+  const key=(localStorage.getItem('ccnaApiKey')||'').trim();
+  if(!key){alert('AI 문제 생성은 AI 튜터 탭에서 API 키를 먼저 저장해야 합니다.');return;}
+  window.aiMode=true;reviewMode=false;
+  const sel=document.getElementById('domainSel').value;
+  const pair=sel==='all'?DOMAINS[Math.random()*DOMAINS.length|0]:(DOMAINS.find(d=>d[0]===sel)||DOMAINS[0]);
+  const dk=pair[0],dn=pair[1];
+  const body=document.getElementById('quizBody');
+  body.innerHTML='<p class="msg ai think">AI가 새 문제 5개를 만드는 중…</p>';
+  document.getElementById('qcount').textContent='AI 생성 ('+dn+')';document.getElementById('qbar').style.width='0%';
+  const N=5;
+  const sys="You are a senior Cisco CCNA 200-301 exam item writer. Produce exam-accurate, non-trivial questions with realistic, plausible distractors that match the real exam style and difficulty. Exactly one option must be unambiguously correct and the marked index must be correct. Output ONLY a single JSON array and nothing else. Do not use emojis.";
+  const user=`Write ${N} DIFFERENT high-quality CCNA 200-301 exam-style multiple-choice questions for the domain "${dn}". Vary subtopics and difficulty; include exhibit-based items (show command output / config / topology as plain text) where realistic. Each item: English stem; exactly 4 English options with exactly ONE correct; a natural Korean translation of the stem; a concise Korean explanation of why the answer is correct and briefly why key distractors are wrong. Double-check that the "a" index points to the truly correct option. Return ONLY a JSON array of ${N} objects: [{"q":"<English stem>","ex":"<exhibit text or empty string>","o":["o1","o2","o3","o4"],"a":<integer 0-3>,"t":"<Korean stem translation>","e":"<Korean explanation>"}]`;
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+      headers:{'x-api-key':key,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:getModel(),max_tokens:4000,system:sys,messages:[{role:'user',content:user}]})});
+    const data=await res.json();
+    if(data.error)throw new Error(data.error.message||'API 오류');
+    const raw=(data.content||[]).map(c=>c.text||'').join('');
+    const jm=raw.match(/\[[\s\S]*\]/);
+    if(!jm)throw new Error('문제 형식 오류. 다시 시도하세요.');
+    const arr=JSON.parse(jm[0]);
+    const pool=arr.filter(r=>r&&Array.isArray(r.o)&&r.o.length===4&&typeof r.a==='number'&&r.a>=0&&r.a<=3&&r.q).map(r=>{const q={d:dk,q:r.q,o:r.o,a:r.a,t:r.t||'',e:r.e||'',ai:true,id:'ai'+(++aiCounter)};if(r.ex&&String(r.ex).trim())q.ex=r.ex;return q;});
+    if(!pool.length)throw new Error('생성 결과가 비었습니다. 다시 시도하세요.');
+    quizPool=pool;qi=0;renderQ();
+  }catch(e){
+    body.innerHTML='<div class="explain show">[오류] '+escapeHtml(e.message)+'<br>API 키·크레딧·모델명을 확인하세요. <button class="btn sec" style="margin-top:6px" onclick="generateAIQuestion()">다시 생성</button></div>';
+  }
 }
 const LTR=['A','B','C','D','E','F'];
 function renderQ(){
@@ -634,7 +670,7 @@ function renderQ(){
     <div id="opts"></div>
     ${multi?`<button class="btn" id="subBtn" onclick="submitMulti()">정답 확인</button>`:''}
     <div class="explain" id="exp"></div>
-    <div style="margin-top:12px;text-align:right"><button class="btn sec" id="nextBtn" style="display:none" onclick="qi++;renderQ()">다음</button></div>`;
+    <div style="margin-top:12px;text-align:right"><button class="btn sec" id="nextBtn" style="display:none" onclick="nextQuestion()">다음</button></div>`;
   const opts=document.getElementById('opts');
   const order=shuffle(q.o.map((t,i)=>({t,i})));
   order.forEach(({t,i},pos)=>{
@@ -662,9 +698,9 @@ function finishQ(correct,q){
   const sub=document.getElementById('subBtn');if(sub)sub.style.display='none';
   const s=getStats();s.total++;if(correct){s.correct++;s.streak++;}else{s.streak=0;}setStats(s);
   const dom=getDom();if(!dom[q.d])dom[q.d]={t:0,c:0};dom[q.d].t++;if(correct)dom[q.d].c++;setDom(dom);
-  let w=getWrong();
+  if(!q.ai){let w=getWrong();
   if(correct){if(reviewMode){w=w.filter(id=>id!==q.id);setWrong(w);}}
-  else{if(!w.includes(q.id)){w.push(q.id);setWrong(w);}}
+  else{if(!w.includes(q.id)){w.push(q.id);setWrong(w);}}}
 }
 function answerSingle(btn,idx,q){
   if(document.querySelector('.opt.disabled'))return;
@@ -979,7 +1015,7 @@ function switchTo(v){
   document.querySelectorAll('.view').forEach(x=>x.classList.toggle('active',x.id===v));
 }
 const MODELS=["claude-haiku-4-5-20251001","claude-sonnet-4-6","claude-opus-4-8"];
-function getModel(){return localStorage.getItem('ccnaModel')||'claude-haiku-4-5-20251001';}
+function getModel(){return localStorage.getItem('ccnaModel')||'claude-sonnet-4-6';}
 function saveChat(){try{localStorage.setItem('ccnaChat',JSON.stringify(tutorHist.slice(-40)));}catch(e){}}
 function initTutor(){
   document.getElementById('tutorKey').value=localStorage.getItem('ccnaApiKey')||'';
@@ -994,7 +1030,7 @@ function initTutor(){
 function saveTutorSettings(){
   localStorage.setItem('ccnaApiKey',document.getElementById('tutorKey').value.trim());
   const sel=document.getElementById('tutorModel');
-  const model=sel.value==='__custom'?(document.getElementById('tutorModelCustom').value.trim()||'claude-haiku-4-5-20251001'):sel.value;
+  const model=sel.value==='__custom'?(document.getElementById('tutorModelCustom').value.trim()||'claude-sonnet-4-6'):sel.value;
   localStorage.setItem('ccnaModel',model);
   const s=document.getElementById('tutorSaved');s.textContent='저장됨';setTimeout(()=>s.textContent='',1500);
 }
