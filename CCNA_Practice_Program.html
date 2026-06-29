@@ -1098,7 +1098,19 @@ async function sendExplainTurn(){
   const q=curExplain;
   const opts=q.o.map((t,i)=>String.fromCharCode(65+i)+'. '+t).join(' / ');
   const ans=Array.isArray(q.a)?q.a.map(i=>String.fromCharCode(65+i)).join(', '):String.fromCharCode(65+q.a);
-  const sys=`You are a warm, Socratic CCNA tutor using the Feynman technique. Chat in Korean (keep technical/exam terms in English). The learner explains a concept in their own words; engage in a real back-and-forth: briefly affirm what is correct, point out what is missing or wrong, and ask ONE focused follow-up question to push them deeper — unless they have essentially mastered it. Keep each reply short (2-5 sentences). Do not use emojis. After EACH learner message, rate how complete and accurate their CUMULATIVE explanation is so far. Respond with ONLY a JSON object and nothing else: {"reply":"<your Korean conversational reply; include one follow-up question unless mastered>","score":<integer 0-100>}. When score >= ${exTarget}, congratulate, give a one-line summary of the key point, and do NOT ask another question.\nConcept being assessed:\n[Question] ${q.q}\n[Options] ${opts}\n[Correct answer] ${ans}\n[Reference explanation] ${q.e}\nTARGET=${exTarget}`;
+  const sys=`You are a warm, Socratic CCNA tutor using the Feynman technique. Chat in Korean (keep technical/exam terms in English). The learner must explain the concept in THEIR OWN words; engage in a real back-and-forth: briefly affirm what is correct, point out what is missing or wrong, and ask ONE focused follow-up question to push them deeper. Keep each reply short (2-5 sentences). Do not use emojis.
+SCORING RULES (critical):
+- The score reflects ONLY what the LEARNER has explained in their own words across the conversation. NEVER give credit for facts that YOU (the assistant) supplied.
+- If the learner says they don't know, asks you to explain, or merely agrees with / repeats / paraphrases your explanation without showing their own understanding, you may explain it, but you MUST keep the score at or below 40 and then ask them to restate it in their own words.
+- Only raise the score as the learner correctly articulates the idea themselves. Do NOT pass them just because the correct information appeared somewhere in the chat.
+- A passing score (>= ${exTarget}) requires the learner to have stated the key points themselves, accurately, with little prompting.
+After EACH learner message, output ONLY a JSON object and nothing else: {"reply":"<your Korean conversational reply; include one follow-up question unless the learner has truly mastered it>","score":<integer 0-100 reflecting the learner's own demonstrated understanding>}. When score >= ${exTarget}, congratulate, give a one-line summary, and do NOT ask another question.
+Concept being assessed:
+[Question] ${q.q}
+[Options] ${opts}
+[Correct answer] ${ans}
+[Reference explanation] ${q.e}
+TARGET=${exTarget}`;
   const apiMsgs=exHist.slice(1).map(m=>({role:m.role,content:m.content}));
   try{
     const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
