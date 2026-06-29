@@ -1164,37 +1164,47 @@ function newExplainQuestion(){
   if(pool.length===0)pool=QUESTIONS.map(q=>q.id);
   const id=pool[Math.random()*pool.length|0];
   curExplain=QUESTIONS[id];exHist=[];window._exBusy=false;
-  exHist.push({role:'assistant',content:`이 개념을 당신의 말로 설명해 주세요. 정답이 무엇이고 왜 그런지 설명하면 됩니다. 제가 듣고 추가 질문을 드릴게요.\n\n**Q.** ${curExplain.q}\n\n(해석: ${curExplain.t})`});
+  exHist.push({role:'assistant',content:`이 개념을 연습해볼게요. 바로 설명에 도전해도 되고, 잘 모르겠으면 아래 "먼저 설명 듣기" 버튼을 누르면 제가 쉽게 가르쳐 드린 뒤 따라 설명하게 해줄게요.\n\n**Q.** ${curExplain.q}\n\n(해석: ${curExplain.t})`});
   document.getElementById('exArea').innerHTML=
     `<div id="exChat"></div>
      <div id="exScore"></div>
-     <div id="exControls" style="display:flex;gap:8px;margin-top:10px">
-       <textarea id="exInput" rows="3" placeholder="설명을 작성하고 Enter (또는 보내기)…" style="flex:1;margin:0"></textarea>
-       <button class="btn green" onclick="sendExplainTurn()">보내기</button>
+     <div id="exControls" style="margin-top:10px">
+       <div style="display:flex;gap:8px">
+         <textarea id="exInput" rows="3" placeholder="설명을 작성하고 Enter (또는 보내기)…" style="flex:1;margin:0"></textarea>
+         <button class="btn green" onclick="sendExplainTurn()">보내기</button>
+       </div>
+       <div style="margin-top:8px"><button class="btn sec" style="font-size:13px;padding:6px 12px" onclick="teachExplain()">먼저 설명 듣기 (모를 때)</button></div>
      </div>`;
   renderExChat();
   const inp=document.getElementById('exInput');inp.focus();
   inp.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendExplainTurn();}};
 }
-async function sendExplainTurn(){
+function teachExplain(){
+  if(window._exBusy)return;
+  sendExplainTurn('아직 잘 몰라요. 먼저 이 개념의 핵심을 쉽게 가르쳐 주고, 그 다음에 제가 제 말로 설명해볼게요.');
+}
+async function sendExplainTurn(preset){
   const key=(localStorage.getItem('ccnaApiKey')||'').trim();
   if(!key||!curExplain||window._exBusy)return;
   const ta=document.getElementById('exInput');
-  const text=(ta.value||'').trim();
+  const text=(preset||(ta?ta.value:'')||'').trim();
   if(!text){alert('설명을 입력하세요.');return;}
-  ta.value='';
+  if(ta)ta.value='';
   exHist.push({role:'user',content:text});
   window._exBusy=true;renderExChat();
   const q=curExplain;
   const opts=q.o.map((t,i)=>String.fromCharCode(65+i)+'. '+t).join(' / ');
   const ans=Array.isArray(q.a)?q.a.map(i=>String.fromCharCode(65+i)).join(', '):String.fromCharCode(65+q.a);
-  const sys=`You are a warm, Socratic CCNA tutor using the Feynman technique. Chat in Korean (keep technical/exam terms in English). The learner must explain the concept in THEIR OWN words; engage in a real back-and-forth: briefly affirm what is correct, point out what is missing or wrong, and ask ONE focused follow-up question to push them deeper. Keep each reply short (2-5 sentences). Do not use emojis.
-SCORING RULES (critical):
-- The score reflects ONLY what the LEARNER has explained in their own words across the conversation. NEVER give credit for facts that YOU (the assistant) supplied.
-- If the learner says they don't know, asks you to explain, or merely agrees with / repeats / paraphrases your explanation without showing their own understanding, you may explain it, but you MUST keep the score at or below 40 and then ask them to restate it in their own words.
-- Only raise the score as the learner correctly articulates the idea themselves. Do NOT pass them just because the correct information appeared somewhere in the chat.
-- A passing score (>= ${exTarget}) requires the learner to have stated the key points themselves, accurately, with little prompting.
-After EACH learner message, output ONLY a JSON object and nothing else: {"reply":"<your Korean conversational reply; include one follow-up question unless the learner has truly mastered it>","score":<integer 0-100 reflecting the learner's own demonstrated understanding>}. When score >= ${exTarget}, congratulate, give a one-line summary, and do NOT ask another question.
+  const sys=`You are a warm, patient CCNA 200-301 tutor using the Feynman technique, chatting in Korean (keep technical/exam terms in English). The learner may be a beginner and can get frustrated, so be encouraging and never naggy.
+TEACH FIRST when needed:
+- If the learner says they don't know, asks you to explain or teach, or seems stuck or frustrated, FIRST clearly TEACH the concept: give the correct answer and explain the key points simply with a short example, in Korean, as something to read and learn. THEN in ONE sentence gently invite them to explain it back in their own words. Do NOT give only tiny hints while repeatedly demanding an answer.
+- Accept the learner's own words in Korean. Never force them to rephrase in different words or in English.
+- When the learner does explain, briefly affirm what is right, gently fill in what is missing, and ask at most ONE simple follow-up. Keep replies short. Do not use emojis.
+SCORING (score = the learner's OWN demonstrated understanding):
+- Credit ONLY what the LEARNER stated in their own words. NEVER credit facts that YOU supplied.
+- While you are teaching, or the learner is only reading/agreeing/saying they do not know, keep the score at or below 40.
+- Raise the score only as the learner articulates the idea themselves. A pass (>= ${exTarget}) requires the learner to state the key points themselves, accurately.
+After EACH learner message, output ONLY a JSON object and nothing else: {"reply":"<your Korean reply>","score":<integer 0-100 = the learner's own demonstrated understanding>}. When score >= ${exTarget}, congratulate, give a one-line summary, and do NOT ask another question.
 Concept being assessed:
 [Question] ${q.q}
 [Options] ${opts}
