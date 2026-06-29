@@ -611,42 +611,58 @@ function startReview(){
 /* ============== QUIZ ENGINE (single + multi + exhibit) ============== */
 let quizPool=[],qi=0;
 function startQuiz(){
-  reviewMode=false;window.aiMode=false;
+  reviewMode=false;window.aiMode=false;aiBuffer=null;aiBufferSel=null;
   const dom=document.getElementById('domainSel').value;
   quizPool=shuffle(QUESTIONS.filter(q=>dom==='all'||q.d===dom));
   qi=0;renderQ();
 }
-let aiCounter=0;
-function nextQuestion(){if(window.aiMode){if(qi<quizPool.length-1){qi++;renderQ();}else{generateAIQuestion();}}else{qi++;renderQ();}}
+let aiCounter=0,aiBuffer=null,aiBufferSel=null,aiPrefetching=false;
+function pickDomain(){
+  const sel=document.getElementById('domainSel').value;
+  const pair=sel==='all'?DOMAINS[Math.random()*DOMAINS.length|0]:(DOMAINS.find(d=>d[0]===sel)||DOMAINS[0]);
+  return {sel,dk:pair[0],dn:pair[1]};
+}
+async function fetchAIBatch(dk,dn){
+  const key=(localStorage.getItem('ccnaApiKey')||'').trim();
+  if(!key)throw new Error('API 키가 없습니다. AI 튜터 탭에서 키를 저장하세요.');
+  const N=5;
+  const sys="You are a senior Cisco CCNA 200-301 exam item writer. Produce exam-accurate, non-trivial questions with realistic, plausible distractors that match the real exam style and difficulty. Exactly one option must be unambiguously correct and the marked index must be correct. Output ONLY a single JSON array and nothing else. Do not use emojis.";
+  const user=`Write ${N} DIFFERENT high-quality CCNA 200-301 exam-style multiple-choice questions for the domain "${dn}". Vary subtopics and difficulty; include exhibit-based items (show command output / config / topology as plain text) where realistic. Each item: English stem; exactly 4 English options with exactly ONE correct; a natural Korean translation of the stem; a concise Korean explanation of why the answer is correct and briefly why key distractors are wrong. Double-check that the "a" index points to the truly correct option. Return ONLY a JSON array of ${N} objects: [{"q":"<English stem>","ex":"<exhibit text or empty string>","o":["o1","o2","o3","o4"],"a":<integer 0-3>,"t":"<Korean stem translation>","e":"<Korean explanation>"}]`;
+  const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':key,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:getModel(),max_tokens:4000,system:sys,messages:[{role:'user',content:user}]})});
+  const data=await res.json();
+  if(data.error)throw new Error(data.error.message||'API 오류');
+  const raw=(data.content||[]).map(c=>c.text||'').join('');
+  const jm=raw.match(/\[[\s\S]*\]/);
+  if(!jm)throw new Error('문제 형식 오류. 다시 시도하세요.');
+  const arr=JSON.parse(jm[0]);
+  const pool=arr.filter(r=>r&&Array.isArray(r.o)&&r.o.length===4&&typeof r.a==='number'&&r.a>=0&&r.a<=3&&r.q).map(r=>{const q={d:dk,q:r.q,o:r.o,a:r.a,t:r.t||'',e:r.e||'',ai:true,id:'ai'+(++aiCounter)};if(r.ex&&String(r.ex).trim())q.ex=r.ex;return q;});
+  if(!pool.length)throw new Error('생성 결과가 비었습니다. 다시 시도하세요.');
+  return pool;
+}
+function prefetchAI(){
+  if(aiPrefetching||aiBuffer)return;
+  const d=pickDomain();aiPrefetching=true;
+  fetchAIBatch(d.dk,d.dn).then(pool=>{aiBuffer=pool;aiBufferSel=d.sel;}).catch(()=>{}).finally(()=>{aiPrefetching=false;});
+}
+function nextQuestion(){
+  if(window.aiMode){
+    if(qi<quizPool.length-1){qi++;renderQ();if(qi>=quizPool.length-2)prefetchAI();}
+    else if(aiBuffer&&aiBufferSel===document.getElementById('domainSel').value){quizPool=aiBuffer;aiBuffer=null;qi=0;renderQ();prefetchAI();}
+    else{generateAIQuestion();}
+  }else{qi++;renderQ();}
+}
 async function generateAIQuestion(){
   const key=(localStorage.getItem('ccnaApiKey')||'').trim();
   if(!key){alert('AI 문제 생성은 AI 튜터 탭에서 API 키를 먼저 저장해야 합니다.');return;}
   window.aiMode=true;reviewMode=false;
   const sel=document.getElementById('domainSel').value;
-  const pair=sel==='all'?DOMAINS[Math.random()*DOMAINS.length|0]:(DOMAINS.find(d=>d[0]===sel)||DOMAINS[0]);
-  const dk=pair[0],dn=pair[1];
+  if(aiBuffer&&aiBufferSel===sel){quizPool=aiBuffer;aiBuffer=null;qi=0;renderQ();prefetchAI();return;}
+  const d=pickDomain();
   const body=document.getElementById('quizBody');
-  body.innerHTML='<p class="msg ai think">AI가 새 문제 5개를 만드는 중…</p>';
-  document.getElementById('qcount').textContent='AI 생성 ('+dn+')';document.getElementById('qbar').style.width='0%';
-  const N=5;
-  const sys="You are a senior Cisco CCNA 200-301 exam item writer. Produce exam-accurate, non-trivial questions with realistic, plausible distractors that match the real exam style and difficulty. Exactly one option must be unambiguously correct and the marked index must be correct. Output ONLY a single JSON array and nothing else. Do not use emojis.";
-  const user=`Write ${N} DIFFERENT high-quality CCNA 200-301 exam-style multiple-choice questions for the domain "${dn}". Vary subtopics and difficulty; include exhibit-based items (show command output / config / topology as plain text) where realistic. Each item: English stem; exactly 4 English options with exactly ONE correct; a natural Korean translation of the stem; a concise Korean explanation of why the answer is correct and briefly why key distractors are wrong. Double-check that the "a" index points to the truly correct option. Return ONLY a JSON array of ${N} objects: [{"q":"<English stem>","ex":"<exhibit text or empty string>","o":["o1","o2","o3","o4"],"a":<integer 0-3>,"t":"<Korean stem translation>","e":"<Korean explanation>"}]`;
-  try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
-      headers:{'x-api-key':key,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:getModel(),max_tokens:4000,system:sys,messages:[{role:'user',content:user}]})});
-    const data=await res.json();
-    if(data.error)throw new Error(data.error.message||'API 오류');
-    const raw=(data.content||[]).map(c=>c.text||'').join('');
-    const jm=raw.match(/\[[\s\S]*\]/);
-    if(!jm)throw new Error('문제 형식 오류. 다시 시도하세요.');
-    const arr=JSON.parse(jm[0]);
-    const pool=arr.filter(r=>r&&Array.isArray(r.o)&&r.o.length===4&&typeof r.a==='number'&&r.a>=0&&r.a<=3&&r.q).map(r=>{const q={d:dk,q:r.q,o:r.o,a:r.a,t:r.t||'',e:r.e||'',ai:true,id:'ai'+(++aiCounter)};if(r.ex&&String(r.ex).trim())q.ex=r.ex;return q;});
-    if(!pool.length)throw new Error('생성 결과가 비었습니다. 다시 시도하세요.');
-    quizPool=pool;qi=0;renderQ();
-  }catch(e){
-    body.innerHTML='<div class="explain show">[오류] '+escapeHtml(e.message)+'<br>API 키·크레딧·모델명을 확인하세요. <button class="btn sec" style="margin-top:6px" onclick="generateAIQuestion()">다시 생성</button></div>';
-  }
+  body.innerHTML='<p class="msg ai think">AI가 새 문제 5개를 만드는 중… (이후 문제는 미리 준비돼 빠릅니다)</p>';
+  document.getElementById('qcount').textContent='AI 생성 ('+d.dn+')';document.getElementById('qbar').style.width='0%';
+  try{const pool=await fetchAIBatch(d.dk,d.dn);quizPool=pool;qi=0;renderQ();prefetchAI();}
+  catch(e){body.innerHTML='<div class="explain show">[오류] '+escapeHtml(e.message)+'<br>API 키·크레딧·모델명을 확인하세요. <button class="btn sec" style="margin-top:6px" onclick="generateAIQuestion()">다시 생성</button></div>';}
 }
 const LTR=['A','B','C','D','E','F'];
 function renderQ(){
@@ -691,7 +707,7 @@ function lockOpts(q){
 }
 function finishQ(correct,q){
   const exp=document.getElementById('exp');
-  exp.innerHTML=(correct?'<b>[정답]</b>':'<b>[오답]</b>')+'<br><b>해석:</b> '+escapeHtml(q.t)+'<br><b>설명:</b> '+q.e+'<br><button class="btn sec" style="font-size:13px;padding:6px 12px;margin-top:8px" onclick="askTutorAboutLast()">이 문제 AI 튜터에게 질문</button>';
+  exp.innerHTML=(correct?'<b>[정답]</b>':'<b>[오답]</b>')+'<br><b>해석:</b> '+escapeHtml(q.t)+'<br><b>설명:</b> '+q.e+'<br><button class="btn sec" style="font-size:13px;padding:6px 12px;margin-top:8px" onclick="askTutorAboutLast()">'+(q.ai?'이 문제 정답 검증 요청':'이 문제 AI 튜터에게 질문')+'</button>';
   window._lastQ=q;
   exp.classList.add('show');
   document.getElementById('nextBtn').style.display='inline-block';
@@ -1106,7 +1122,8 @@ function askTutorAboutLast(){
   const opts=q.o.map((t,i)=>String.fromCharCode(65+i)+'. '+t).join('\n');
   const ans=Array.isArray(q.a)?q.a.map(i=>String.fromCharCode(65+i)).join(', '):String.fromCharCode(65+q.a);
   const ex=q.ex?('Exhibit:\n'+q.ex+'\n\n'):'';
-  const text=`다음 CCNA 문제를 한국어로 쉽게 설명해줘. 정답이 왜 맞고 다른 보기는 왜 틀린지도 알려줘.\n\n${ex}Q: ${q.q}\n${opts}\n정답: ${ans}`;
+  const intro=q.ai?'다음은 AI가 생성한 CCNA 문제야. 표시된 정답이 정말 맞는지 검증하고, 틀렸으면 올바른 답과 이유를 한국어로 알려줘.':'다음 CCNA 문제를 한국어로 쉽게 설명해줘. 정답이 왜 맞고 다른 보기는 왜 틀린지도 알려줘.';
+  const text=`${intro}\n\n${ex}Q: ${q.q}\n${opts}\n정답: ${ans}`;
   switchTo('tutor');initTutor();sendTutor(text);
 }
 
