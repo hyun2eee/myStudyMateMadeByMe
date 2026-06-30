@@ -197,7 +197,8 @@
 <section id="dnd" class="view">
   <div class="card">
     <div class="meta">
-      <span>연습 선택: <select id="dndSel" onchange="loadDnd()"></select></span>
+      <span>연습 선택: <select id="dndSel" onchange="loadDnd()"></select>
+        <button class="btn sec" style="font-size:13px;padding:6px 12px;margin-left:6px" onclick="generateDnd()">AI로 새 DnD 생성</button></span>
       <span id="dndScore"></span>
     </div>
     <p id="dndPrompt" style="color:var(--muted);font-size:14px"></p>
@@ -618,6 +619,12 @@ function renderWrong(){
 }
 function delWrongAt(i){const w=getWrong();w.splice(i,1);setWrong(w);renderReport();}
 function startExplainWrong(i){const q=resolveWrong(getWrong()[i]);if(q)startExplainQ(q);}
+function explainOpening(q){
+  let s='이 문제의 정답을 고르고, 왜 그게 맞는지 본인 말로 설명해보세요. 잘 모르겠으면 아래 "먼저 설명 듣기"를 누르세요.\n\n';
+  if(q.ex)s+='```\n'+q.ex+'\n```\n\n';
+  s+='**Q.** '+q.q+'\n'+q.o.map((t,i)=>String.fromCharCode(65+i)+'. '+t).join('\n')+'\n\n(해석: '+(q.t||'')+')';
+  return s;
+}
 function startExplainWith(id){startExplainQ(QUESTIONS[id]);}
 function startExplainQ(q){
   if(!q)return;
@@ -626,7 +633,7 @@ function startExplainQ(q){
   const ts=document.getElementById('exTarget');if(ts)ts.value=String(exTarget);
   renderExStats();
   curExplain=q;exHist=[];window._exBusy=false;
-  exHist.push({role:'assistant',content:`이 개념을 연습해볼게요. 바로 설명에 도전해도 되고, 잘 모르겠으면 아래 "먼저 설명 듣기" 버튼을 누르면 제가 쉽게 가르쳐 드린 뒤 따라 설명하게 해줄게요.\n\n**Q.** ${q.q}\n\n(해석: ${q.t})`});
+  exHist.push({role:'assistant',content:explainOpening(q)});
   document.getElementById('exArea').innerHTML=`<div id="exChat"></div><div id="exScore"></div><div id="exControls" style="margin-top:10px"><div style="display:flex;gap:8px"><textarea id="exInput" rows="3" placeholder="설명을 작성하고 Enter (또는 보내기)…" style="flex:1;margin:0"></textarea><button class="btn green" onclick="sendExplainTurn()">보내기</button></div><div style="margin-top:8px"><button class="btn sec" style="font-size:13px;padding:6px 12px" onclick="teachExplain()">먼저 설명 듣기 (모를 때)</button></div></div>`;
   renderExChat();
   const inp=document.getElementById('exInput');if(inp){inp.focus();inp.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendExplainTurn();}};}
@@ -823,6 +830,36 @@ const DND_SETS=[
  {name:"API/평면 ↔ 설명",prompt:"SDN 용어와 설명을 매칭하세요.",
   pairs:[["컨트롤러→장비 방향","Southbound API"],["컨트롤러→앱 방향","Northbound API"],["경로를 결정하는 평면","Control Plane"],["패킷을 실제 전달하는 평면","Data Plane"]],
   note:"Southbound=아래(장비)로, Northbound=위(앱)로. Control=결정, Data=전달."},
+ {name:"OSI 계층 ↔ PDU(데이터 단위)",prompt:"각 계층의 데이터 단위를 매칭하세요.",
+  pairs:[["Transport (L4)","Segment"],["Network (L3)","Packet"],["Data Link (L2)","Frame"],["Physical (L1)","Bits"]],
+  note:"전송=세그먼트, 네트워크=패킷, 데이터링크=프레임, 물리=비트."},
+ {name:"케이블 종류 ↔ 용도",prompt:"케이블을 알맞은 용도에 매칭하세요.",
+  pairs:[["PC ↔ 스위치 (이종)","Straight-through"],["스위치 ↔ 스위치 (동종)","Crossover"],["콘솔 포트 접속","Rollover(콘솔)"],["장거리 광케이블","Single-mode fiber"]],
+  note:"이종=straight, 동종=crossover, 콘솔=rollover. Auto-MDIX면 straight/crossover 무관."},
+ {name:"IPv4 대역 ↔ 분류",prompt:"주소 대역을 분류에 매칭하세요.",
+  pairs:[["10/8, 172.16/12, 192.168/16","사설(Private)"],["169.254.0.0/16","APIPA(자동)"],["127.0.0.0/8","루프백(Loopback)"],["224.0.0.0/4","멀티캐스트"]],
+  note:"사설/APIPA(DHCP 실패)/루프백/멀티캐스트 구분."},
+ {name:"무선 보안 ↔ 특징",prompt:"무선 보안 방식을 특징에 매칭하세요.",
+  pairs:[["가장 강력, SAE 사용","WPA3"],["AES(CCMP) 사용","WPA2"],["취약한 구식 암호화","WEP"],["인증 없음(개방형)","Open"]],
+  note:"WPA3(SAE) > WPA2(AES) > WEP(취약)."},
+ {name:"라우팅 프로토콜 ↔ 유형",prompt:"프로토콜을 유형에 매칭하세요.",
+  pairs:[["OSPF","Link-state"],["EIGRP","Advanced Distance-vector"],["RIP","Distance-vector"],["Static","수동 설정"]],
+  note:"OSPF 링크상태, EIGRP 고급 DV, RIP DV, Static 수동."},
+ {name:"포트 보안 위반 모드 ↔ 동작",prompt:"위반 모드를 동작에 매칭하세요.",
+  pairs:[["차단만, 로그 없음","protect"],["차단 + 로그/카운터","restrict"],["포트 err-disabled (기본값)","shutdown"]],
+  note:"기본 위반 모드는 shutdown."},
+ {name:"IPv6 주소 ↔ 접두사",prompt:"IPv6 주소 종류를 접두사에 매칭하세요.",
+  pairs:[["글로벌 유니캐스트","2000::/3"],["링크-로컬","FE80::/10"],["멀티캐스트","FF00::/8"],["루프백","::1"]],
+  note:"GUA 2000::/3, LLA FE80::/10, 멀티캐스트 FF00::/8, 루프백 ::1."},
+ {name:"QoS 용어 ↔ 정의",prompt:"QoS 용어를 정의에 매칭하세요.",
+  pairs:[["트래픽 분류","Classification"],["우선순위 표시(DSCP)","Marking"],["초과분 폐기","Policing"],["버퍼링 후 완만 전송","Shaping"]],
+  note:"분류 → 마킹 → 폴리싱/셰이핑."},
+ {name:"REST 메서드 ↔ 동작",prompt:"HTTP 메서드를 동작에 매칭하세요.",
+  pairs:[["조회","GET"],["생성","POST"],["수정/교체","PUT"],["삭제","DELETE"]],
+  note:"GET 조회, POST 생성, PUT 수정, DELETE 삭제."},
+ {name:"클라우드 모델 ↔ 설명",prompt:"클라우드 서비스 모델을 설명에 매칭하세요.",
+  pairs:[["VM/인프라 제공, OS는 직접 설치","IaaS"],["개발 플랫폼 제공","PaaS"],["완성된 앱 제공","SaaS"]],
+  note:"IaaS(인프라)/PaaS(플랫폼)/SaaS(앱)."},
 ];
 let dndCur=0,dragId=null;
 function initDndSelect(){
@@ -853,6 +890,24 @@ function loadDnd(){
     slot.onclick=()=>{if(dragId!==null)dropChip(slot);};
     targets.appendChild(slot);
   });
+}
+async function generateDnd(){
+  if(!localStorage.getItem('ccnaApiKey')){alert('AI 튜터 탭에서 API 키를 먼저 저장하세요.');return;}
+  document.getElementById('dndPrompt').textContent='AI가 새 매칭 문제를 만드는 중…';
+  const sys="You create CCNA 200-301 drag-and-drop matching exercises. Output ONLY a JSON object. Do not use emojis.";
+  const user='Create ONE CCNA drag-and-drop matching set with 4 to 6 pairs on a core CCNA topic. Left side = a term or scenario (Korean or English ok), right side = the matching answer (short English term or number). All right-side answers MUST be unique. Add a short Korean note. Return ONLY JSON: {"name":"<short Korean title>","prompt":"<short Korean instruction>","pairs":[["left1","right1"],["left2","right2"]],"note":"<Korean explanation>"}';
+  try{
+    const raw=await callClaude(sys,user,900);
+    const jm=raw.match(/\{[\s\S]*\}/);if(!jm)throw new Error('형식 오류');
+    const o=JSON.parse(jm[0]);
+    if(!Array.isArray(o.pairs)||o.pairs.length<3||!o.pairs.every(p=>Array.isArray(p)&&p.length===2))throw new Error('생성 실패');
+    const rights=o.pairs.map(p=>String(p[1]));
+    if(new Set(rights).size!==rights.length)throw new Error('정답이 중복됨 — 다시 시도하세요');
+    o.name='(AI) '+(o.name||'매칭');o.prompt=o.prompt||'알맞게 매칭하세요.';o.note=o.note||'';
+    DND_SETS.push(o);
+    const sel=document.getElementById('dndSel');const opt=document.createElement('option');opt.value=DND_SETS.length-1;opt.textContent=o.name;sel.appendChild(opt);sel.value=String(DND_SETS.length-1);
+    loadDnd();
+  }catch(e){document.getElementById('dndPrompt').textContent='오류: '+e.message;}
 }
 function dropChip(slot){
   if(dragId===null)return;
@@ -1266,7 +1321,7 @@ function newExplainQuestion(){
   if(wrongQs.length){q=wrongQs[Math.random()*wrongQs.length|0];}
   else{const ids=QUESTIONS.map(x=>x.id).filter(id=>!mastered.has(id));q=ids.length?QUESTIONS[ids[Math.random()*ids.length|0]]:QUESTIONS[Math.random()*QUESTIONS.length|0];}
   curExplain=q;exHist=[];window._exBusy=false;
-  exHist.push({role:'assistant',content:`이 개념을 연습해볼게요. 바로 설명에 도전해도 되고, 잘 모르겠으면 아래 "먼저 설명 듣기" 버튼을 누르면 제가 쉽게 가르쳐 드린 뒤 따라 설명하게 해줄게요.\n\n**Q.** ${curExplain.q}\n\n(해석: ${curExplain.t})`});
+  exHist.push({role:'assistant',content:explainOpening(curExplain)});
   document.getElementById('exArea').innerHTML=
     `<div id="exChat"></div>
      <div id="exScore"></div>
@@ -1297,7 +1352,7 @@ async function sendExplainTurn(preset){
   const q=curExplain;
   const opts=q.o.map((t,i)=>String.fromCharCode(65+i)+'. '+t).join(' / ');
   const ans=Array.isArray(q.a)?q.a.map(i=>String.fromCharCode(65+i)).join(', '):String.fromCharCode(65+q.a);
-  const sys=`You are a warm, patient CCNA 200-301 tutor using the Feynman technique, chatting in Korean (keep technical/exam terms in English). The learner may be a beginner and can get frustrated, so be encouraging and never naggy.
+  const sys=`You are a warm, patient CCNA 200-301 tutor using the Feynman technique, chatting in Korean (keep technical/exam terms in English). The learner may be a beginner and can get frustrated, so be encouraging and never naggy. The learner can SEE the question and all options. ALWAYS first react to what the learner actually wrote: if they selected an option, state clearly whether that choice is correct or wrong and why; if their statement is wrong, off-topic, or unrelated to this question, point out specifically what is wrong before anything else. Keep your reply in plain Korean prose (no JSON, no raw braces). Only teach the whole concept first when the learner explicitly says they do not know or asks you to explain.
 TEACH FIRST when needed:
 - If the learner says they don't know, asks you to explain or teach, or seems stuck or frustrated, FIRST clearly TEACH the concept: give the correct answer and explain the key points simply with a short example, in Korean, as something to read and learn. THEN in ONE sentence gently invite them to explain it back in their own words. Do NOT give only tiny hints while repeatedly demanding an answer.
 - Accept the learner's own words in Korean. Never force them to rephrase in different words or in English.
@@ -1317,14 +1372,19 @@ TARGET=${exTarget}`;
   try{
     const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
       headers:{'x-api-key':key,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:getModel(),max_tokens:700,system:sys,messages:apiMsgs})});
+      body:JSON.stringify({model:getModel(),max_tokens:1500,system:sys,messages:apiMsgs})});
     const data=await res.json();
     if(data.error)throw new Error(data.error.message||'API 오류');
     const rawtext=(data.content||[]).map(c=>c.text||'').join('');
+    let reply=null,score=null;
     const jm=rawtext.match(/\{[\s\S]*\}/);
-    let reply,score=null;
-    if(jm){try{const r=JSON.parse(jm[0]);reply=r.reply;score=Math.max(0,Math.min(100,Math.round(Number(r.score)||0)));}catch(e){reply=rawtext;}}
-    else reply=rawtext;
+    if(jm){try{const r=JSON.parse(jm[0]);reply=r.reply;score=Math.max(0,Math.min(100,Math.round(Number(r.score)||0)));}catch(e){}}
+    if(reply==null){
+      const rm=rawtext.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+      if(rm){reply=rm[1].replace(/\\n/g,'\n').replace(/\\"/g,'"').replace(/\\\\/g,'\\');}
+      else{reply=rawtext.replace(/\{[\s\S]*\}/,'').trim()||rawtext;}
+      const sm=rawtext.match(/"score"\s*:\s*(\d{1,3})/);if(sm)score=Math.max(0,Math.min(100,+sm[1]));
+    }
     window._exBusy=false;
     exHist.push({role:'assistant',content:reply||'(빈 응답)'});
     renderExChat();
