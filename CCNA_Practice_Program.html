@@ -269,10 +269,18 @@
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
       <button class="btn" onclick="generateLab()">새 랩 생성 (AI)</button>
-      <span style="font-size:12px;color:var(--muted)">실제 시험형 영어 토폴로지·요구사항이 생성됩니다 (AI 튜터 키 사용)</span>
+      <select id="labHistSel" onchange="loadSavedLab()"><option value="">이전 랩 다시보기…</option></select>
     </div>
     <div id="labScenario"></div>
-    <textarea id="cliInput" rows="9" placeholder="IOS 설정 명령어를 한 줄씩 입력하세요 (예: interface gi0/0 / ip address ... / no shutdown)"
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">AI 터미널 — 실제 장비처럼 한 줄씩 입력(Enter 실행). 여기 입력한 명령도 채점에 포함됩니다.</div>
+    <div id="term" style="background:#0b1220;color:#9fe7ff;border:1px solid var(--line);border-radius:9px;padding:10px;font-family:Consolas,monospace;font-size:13px;height:220px;overflow-y:auto;white-space:pre-wrap"></div>
+    <div style="display:flex;gap:6px;margin-top:6px;align-items:center">
+      <span id="termPrompt" style="font-family:Consolas,monospace;color:#7dd3fc;font-size:13px">Router&gt;</span>
+      <input id="termIn" placeholder="명령 입력 후 Enter" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();termExec();}" style="flex:1;background:#0b1220;color:#7dd3fc;border:1px solid var(--line);border-radius:7px;padding:8px;font-family:Consolas,monospace;font-size:13px">
+      <button class="btn sec" style="font-size:12px;padding:6px 10px" onclick="termReset()">초기화</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin:10px 0 4px">또는 아래에 설정을 한꺼번에 붙여넣어도 됩니다(선택):</div>
+    <textarea id="cliInput" rows="5" placeholder="(선택) IOS 설정을 한꺼번에 붙여넣기"
       style="font-family:Consolas,monospace;font-size:14px;color:#7dd3fc;background:#0b1220"></textarea>
     <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn green" onclick="gradeLab()">채점 (AI 검증)</button>
@@ -995,6 +1003,7 @@ function askTutorSubnet(){
 /* ============== CLI SIMULATION ============== */
 let currentLab=null;
 function initCli(){
+  refreshLabHist();termReset();
   if(!localStorage.getItem('ccnaApiKey')){document.getElementById('labScenario').innerHTML='<p style="color:var(--warn);font-size:14px">먼저 "AI 튜터" 탭에서 API 키를 저장하세요.</p>';return;}
   if(!currentLab)document.getElementById('labScenario').innerHTML='<p style="color:var(--muted);font-size:14px">"새 랩 생성"을 누르면 실제 시험형 랩 과제(영어 토폴로지 + 요구사항)가 만들어집니다. 설정을 입력하고 "채점"을 누르면 AI가 요구사항별로 검증해 줍니다. 모르면 "힌트"나 "튜터에게 질문"을 쓰세요.</p>';
 }
@@ -1017,21 +1026,59 @@ async function generateLab(){
   try{
     const raw=await callClaude(sys,user,1600);
     const jm=raw.match(/\{[\s\S]*\}/);if(!jm)throw new Error('형식 오류. 다시 시도하세요.');
-    currentLab=JSON.parse(jm[0]);renderLab();
+    currentLab=JSON.parse(jm[0]);saveLab(currentLab);renderLab();
   }catch(e){sc.innerHTML='<div class="explain show">[오류] '+escapeHtml(e.message)+' <button class="btn sec" style="margin-top:6px" onclick="generateLab()">다시</button></div>';}
 }
 function renderLab(){
-  const l=currentLab;
+  const l=currentLab;if(l._step==null)l._step=0;
   document.getElementById('labScenario').innerHTML=
     '<h3 style="margin:4px 0">'+escapeHtml(l.title||'CCNA Lab')+'</h3>'+
     '<p style="font-size:14px">'+escapeHtml(l.scenario||'')+'</p>'+
     (l.topology?'<pre class="exhibit">'+escapeHtml(l.topology)+'</pre>':'')+
     '<p style="font-weight:700;margin:8px 0 4px">Requirements'+(l.device?(' ('+escapeHtml(l.device)+')'):'')+':</p>'+
-    '<ol style="margin:4px 0 4px 18px;font-size:14px">'+(l.requirements||[]).map(r=>'<li>'+escapeHtml(r)+'</li>').join('')+'</ol>';
+    '<div id="labSteps"></div>';
+  renderLabSteps();termReset();
+}
+function renderLabSteps(){
+  const l=currentLab;const reqs=l.requirements||[];const step=l._step||0;
+  let html='<ol style="margin:4px 0 8px 18px;font-size:14px">';
+  reqs.forEach((r,i)=>{const col=i<step?'var(--accent2)':(i===step?'var(--accent)':'var(--muted)');const wt=i===step?'700':'400';const mk=i<step?'[O] ':(i===step?'→ ':'');html+='<li style="color:'+col+';font-weight:'+wt+'">'+mk+escapeHtml(r)+'</li>';});
+  html+='</ol>';
+  if(step<reqs.length){
+    html+='<div class="explain show"><b>현재 단계: 요구사항 '+(step+1)+' / '+reqs.length+'</b><br><span style="font-size:14px">'+escapeHtml(reqs[step])+'</span><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn green" style="font-size:13px;padding:6px 12px" onclick="gradeStep()">이 단계 채점 → 다음</button><button class="btn sec" style="font-size:13px;padding:6px 12px" onclick="skipStep()">건너뛰기</button></div></div>';
+  } else {
+    html+='<div class="explain show"><b>모든 요구사항 완료! "채점 (AI 검증)"으로 전체를 마무리하거나 새 랩을 생성하세요.</b></div>';
+  }
+  const el=document.getElementById('labSteps');if(el)el.innerHTML=html;
+}
+function skipStep(){if(currentLab&&currentLab._step!=null&&currentLab._step<(currentLab.requirements||[]).length){currentLab._step++;renderLabSteps();}}
+async function gradeStep(){
+  if(!currentLab)return;
+  const reqs=currentLab.requirements||[];const step=currentLab._step||0;
+  if(step>=reqs.length)return;
+  const cfg=[(document.getElementById('cliInput').value||'').trim(),(window._termCmds||[]).join('\n')].filter(Boolean).join('\n');
+  if(!cfg){alert('터미널에 명령을 입력하거나 설정을 붙여넣으세요.');return;}
+  const res=document.getElementById('cliResult');res.className='explain show';res.innerHTML='<p class="msg ai think">이 단계 채점 중…</p>';
+  const sys="You are a fair Cisco CCNA lab grader checking ONE requirement only. Accept equivalent valid syntax and interface abbreviations. Output ONLY a JSON object with Korean text. Do not use emojis.";
+  const user='LAB topology:\n'+currentLab.topology+'\nDevice: '+(currentLab.device||'')+'\n\nREQUIREMENT to check: '+reqs[step]+'\n\nLEARNER CONFIG so far:\n'+cfg+'\n\nDoes the configuration satisfy THIS requirement? Return ONLY JSON: {"ok":<true or false>,"note":"<Korean: 무엇이 맞는지, 또는 무엇이 부족/틀렸는지 구체적으로>"}';
+  try{
+    const raw=await callClaude(sys,user,600);
+    const jm=raw.match(/\{[\s\S]*\}/);if(!jm)throw new Error('채점 형식 오류');
+    const r=JSON.parse(jm[0]);
+    if(r.ok){
+      currentLab._step=step+1;
+      const done=(step+1)>=reqs.length;
+      res.innerHTML='<div style="color:var(--accent2);font-weight:700">[O] 통과! '+escapeHtml(reqs[step])+'</div><div style="color:var(--muted);font-size:14px;margin-top:4px">'+escapeHtml(r.note||'')+'</div><div style="margin-top:8px;font-weight:700">'+(done?'모든 요구사항 완료!':'다음 요구사항으로 진행합니다.')+'</div>';
+      renderLabSteps();
+    } else {
+      window._labFailed=[reqs[step]];window._labCfg=cfg;
+      res.innerHTML='<div style="color:var(--bad);font-weight:700">[X] 아직 미완: '+escapeHtml(reqs[step])+'</div><div style="font-size:14px;margin-top:4px">'+escapeHtml(r.note||'')+'</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn green" style="font-size:13px;padding:6px 12px" onclick="askTutorLabFix()">튜터로 교정</button><button class="btn sec" style="font-size:13px;padding:6px 12px" onclick="labHint()">힌트</button></div>';
+    }
+  }catch(e){res.innerHTML='[오류] '+escapeHtml(e.message);}
 }
 async function gradeLab(){
   if(!currentLab){alert('먼저 "새 랩 생성"을 누르세요.');return;}
-  const cfg=document.getElementById('cliInput').value.trim();
+  const cfg=[(document.getElementById('cliInput').value||'').trim(),(window._termCmds||[]).join('\n')].filter(Boolean).join('\n');
   if(!cfg){alert('설정 명령어를 입력하세요.');return;}
   const res=document.getElementById('cliResult');res.className='explain show';res.innerHTML='<p class="msg ai think">AI가 설정을 검증하는 중…</p>';
   const sys="You are a strict but fair Cisco CCNA lab grader. Given a lab's requirements and the learner's IOS configuration, check each requirement. Accept equivalent valid syntax and interface abbreviations (e.g. int g0/0). Output ONLY a JSON object. All text fields in Korean. Do not use emojis.";
@@ -1045,7 +1092,12 @@ async function gradeLab(){
     let html='<div style="font-weight:700;font-size:16px">랩 점수: '+score+'%</div><div class="progressbar"><div style="width:'+score+'%;background:'+col+'"></div></div>';
     (r.checks||[]).forEach(c=>{const mk=c.ok?'[O] ':'[X] ';const cc=c.ok?'var(--accent2)':'var(--bad)';html+='<div style="margin:7px 0;font-size:14px"><span style="color:'+cc+';font-weight:700">'+mk+'</span><b>'+escapeHtml(c.req||'')+'</b><br><span style="color:var(--muted)">'+escapeHtml(c.note||'')+'</span></div>';});
     if(r.summary)html+='<div style="margin-top:8px"><b>총평:</b> '+escapeHtml(r.summary)+'</div>';
-    html+='<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sec" style="font-size:13px;padding:6px 12px" onclick="askTutorLab()">이 랩 튜터에게 질문</button><button class="btn sec" style="font-size:13px;padding:6px 12px" onclick="labAnswer()">예시 정답 보기</button></div>';
+    window._labFailed=(r.checks||[]).filter(c=>!c.ok).map(c=>c.req);window._labCfg=cfg;
+    html+='<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">';
+    if(window._labFailed.length)html+='<button class="btn green" style="font-size:13px;padding:6px 12px" onclick="askTutorLabFix()">틀린 부분 튜터로 교정</button>';
+    html+='<button class="btn sec" style="font-size:13px;padding:6px 12px" onclick="compareLab()">내 설정 vs 예시정답 비교</button>';
+    html+='<button class="btn sec" style="font-size:13px;padding:6px 12px" onclick="askTutorLab()">랩 질문</button>';
+    html+='<button class="btn sec" style="font-size:13px;padding:6px 12px" onclick="labAnswer()">예시 정답</button></div>';
     res.innerHTML=html;document.getElementById('cliStat').textContent=score+'%';
   }catch(e){res.innerHTML='[오류] '+escapeHtml(e.message);}
 }
@@ -1069,6 +1121,74 @@ function askTutorLab(){
   if(!currentLab){switchTo('tutor');initTutor();return;}
   const text='다음 CCNA 랩에 대해 질문할게. 한국어로 도와줘.\n\n제목: '+currentLab.title+'\n토폴로지:\n'+currentLab.topology+'\n요구사항: '+JSON.stringify(currentLab.requirements)+'\n\n이 랩을 어떻게 푸는지 단계별로 쉽게 설명해줘.';
   switchTo('tutor');initTutor();sendTutor(text);
+}
+function askTutorLabFix(){
+  if(!currentLab){switchTo('tutor');initTutor();return;}
+  const failed=window._labFailed||[],cfg=window._labCfg||'';
+  const text='다음 CCNA 랩에서 내가 틀린 부분을 한국어로 교정해줘. 왜 틀렸고 올바른 명령은 무엇인지 콕 집어 알려줘.\n\n제목: '+currentLab.title+'\n토폴로지:\n'+currentLab.topology+'\n요구사항: '+JSON.stringify(currentLab.requirements)+'\n\n틀린 요구사항: '+JSON.stringify(failed)+'\n\n내 설정:\n'+cfg;
+  switchTo('tutor');initTutor();sendTutor(text);
+}
+function termReset(){
+  window._termCmds=[];
+  const dev=(currentLab&&currentLab.device)||'Router';
+  window._termPrompt=dev+'>';
+  const t=document.getElementById('term');if(t)t.innerHTML='<span style="color:#94a3b8">'+escapeHtml(dev)+' 터미널 준비됨. 예) enable → configure terminal → interface gi0/0 ...</span>\n';
+  const pl=document.getElementById('termPrompt');if(pl)pl.textContent=window._termPrompt;
+}
+async function termExec(){
+  const inp=document.getElementById('termIn');const cmd=(inp.value||'').trim();
+  if(!cmd||window._termBusy)return;
+  const key=(localStorage.getItem('ccnaApiKey')||'').trim();
+  if(!key){alert('AI 튜터 탭에서 API 키를 먼저 저장하세요.');return;}
+  inp.value='';
+  const term=document.getElementById('term');
+  const dev=(currentLab&&currentLab.device)||'Router';
+  const promptStr=window._termPrompt||(dev+'>');
+  term.innerHTML+='<span style="color:#7dd3fc">'+escapeHtml(promptStr+' '+cmd)+'</span>\n';
+  window._termCmds=window._termCmds||[];window._termCmds.push(cmd);
+  window._termBusy=true;term.scrollTop=term.scrollHeight;
+  const sys='You are a Cisco IOS device named '+dev+' in a CCNA lab. Respond to the LAST command exactly as Cisco IOS would, maintaining configuration state across the whole command history. Print realistic output for show commands; change the prompt for mode transitions (user ">", privileged "#", "(config)#", "(config-if)#", "(config-router)#", "(config-line)#", "(config-vlan)#"); return IOS errors like "% Invalid input detected at \'^\' marker." or "% Incomplete command." for wrong or partial syntax. Return ONLY JSON: {"output":"<exact text IOS prints, may be empty>","prompt":"<next prompt, e.g. '+dev+'(config-if)#>"}. Do not use emojis.';
+  const ctx=currentLab?('LAB topology for realism:\n'+currentLab.topology+'\n\n'):'';
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':key,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:getModel(),max_tokens:700,system:sys,messages:[{role:'user',content:ctx+'Full command history (oldest first):\n'+window._termCmds.join('\n')+'\n\nRespond only to the LAST command.'}]})});
+    const data=await res.json();
+    if(data.error)throw new Error(data.error.message||'API 오류');
+    const rawt=(data.content||[]).map(c=>c.text||'').join('');
+    const jm=rawt.match(/\{[\s\S]*\}/);let out='',pr=promptStr;
+    if(jm){try{const r=JSON.parse(jm[0]);out=(r.output!=null?r.output:'');pr=r.prompt||promptStr;}catch(e){out=rawt;}}
+    else out=rawt;
+    if(out)term.innerHTML+=escapeHtml(out)+'\n';
+    window._termPrompt=pr;const pl=document.getElementById('termPrompt');if(pl)pl.textContent=pr;
+  }catch(e){term.innerHTML+='<span style="color:#ef4444">[오류] '+escapeHtml(e.message)+'</span>\n';}
+  window._termBusy=false;term.scrollTop=term.scrollHeight;inp.focus();
+}
+function getLabs(){try{return JSON.parse(localStorage.getItem('ccnaLabs')||'[]');}catch(e){return [];}}
+function setLabs(a){localStorage.setItem('ccnaLabs',JSON.stringify(a.slice(0,40)));}
+function saveLab(lab){const labs=getLabs();const key=(lab.title||'')+'|'+(lab.topology||'').slice(0,40);if(labs.some(l=>((l.title||'')+'|'+(l.topology||'').slice(0,40))===key))return;labs.unshift({title:lab.title,scenario:lab.scenario,topology:lab.topology,requirements:lab.requirements,device:lab.device});setLabs(labs);refreshLabHist();}
+function refreshLabHist(){const sel=document.getElementById('labHistSel');if(!sel)return;const labs=getLabs();sel.innerHTML='<option value="">이전 랩 다시보기 ('+labs.length+')…</option>'+labs.map((l,i)=>'<option value="'+i+'">'+escapeHtml((l.title||'Lab').slice(0,40))+'</option>').join('');}
+function loadSavedLab(){const sel=document.getElementById('labHistSel');const i=sel.value;if(i==='')return;const labs=getLabs();currentLab=labs[+i];if(!currentLab)return;document.getElementById('cliInput').value='';document.getElementById('cliResult').classList.remove('show');document.getElementById('cliStat').textContent='';renderLab();}
+async function compareLab(){
+  if(!currentLab){alert('먼저 랩을 푸세요.');return;}
+  const cfg=[(document.getElementById('cliInput').value||'').trim(),(window._termCmds||[]).join('\n')].filter(Boolean).join('\n');
+  const res=document.getElementById('cliResult');res.className='explain show';res.innerHTML='<p class="msg ai think">예시 정답과 비교 중…</p>';
+  try{
+    if(!currentLab._answerLines){
+      const raw=await callClaude("You are a CCNA lab instructor. Output ONLY the correct IOS configuration commands for the lab, one command per line. No prose, no code fences, no comments.","LAB\nTitle: "+currentLab.title+"\nTopology:\n"+currentLab.topology+"\nRequirements: "+JSON.stringify(currentLab.requirements)+"\nDevice: "+(currentLab.device||'')+"\n\nGive only the commands.",1200);
+      currentLab._answerLines=raw.replace(/```[a-z]*/gi,'').split('\n').map(l=>l.trim()).filter(l=>l&&!l.startsWith('!'));
+    }
+    const norm=l=>l.toLowerCase().replace(/\s+/g,' ').trim();
+    const userLines=cfg.split('\n').map(l=>l.trim()).filter(Boolean);
+    const userNorm=userLines.map(norm),ansNorm=currentLab._answerLines.map(norm);
+    let html='<b>내 설정 vs 예시 정답 비교</b>';
+    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;font-family:Consolas,monospace;font-size:12px">';
+    html+='<div><div style="font-weight:700;margin-bottom:4px">예시 정답</div>'+currentLab._answerLines.map((l,i)=>{const have=userNorm.includes(ansNorm[i]);return '<div style="color:'+(have?'var(--accent2)':'var(--bad)')+'">'+(have?'[O] ':'[X] ')+escapeHtml(l)+'</div>';}).join('')+'</div>';
+    html+='<div><div style="font-weight:700;margin-bottom:4px">내 설정</div>'+(userLines.length?userLines.map((l,i)=>{const need=ansNorm.includes(userNorm[i]);return '<div style="color:'+(need?'var(--accent2)':'var(--muted)')+'">'+escapeHtml(l)+'</div>';}).join(''):'<div style="color:var(--muted)">(입력 없음)</div>')+'</div>';
+    html+='</div>';
+    const missing=currentLab._answerLines.filter((l,i)=>!userNorm.includes(ansNorm[i]));
+    html+='<div style="margin-top:8px;font-size:13px"><b>빠진 명령(예시 기준):</b> '+(missing.length?escapeHtml(missing.join(' / ')):'없음')+'</div>';
+    html+='<div style="font-size:12px;color:var(--muted);margin-top:4px">[O]=예시에 있고 내 설정에도 있음 / [X]=예시엔 있는데 내 설정엔 없음. 동등 표현은 다르게 보일 수 있어요.</div>';
+    res.innerHTML=html;
+  }catch(e){res.innerHTML='[오류] '+escapeHtml(e.message);}
 }
 
 /* ============== VOCAB ============== */
