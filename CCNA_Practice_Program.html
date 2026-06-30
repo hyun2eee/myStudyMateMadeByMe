@@ -549,7 +549,7 @@ document.querySelectorAll('nav button').forEach(b=>{
     document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
     document.getElementById(b.dataset.v).classList.add('active');
-    if(b.dataset.v==='quiz'){if(quizPool.length===0)startQuiz();updateBankInfo();}
+    if(b.dataset.v==='quiz'){if(quizPool.length===0){startQuiz();}else if(!(document.getElementById('quizBody').innerHTML||'').trim()){renderQ();}updateBankInfo();}
     if(b.dataset.v==='dnd') initDndSelect();
     if(b.dataset.v==='subnet') newSubnet();
     if(b.dataset.v==='cli') initCli();
@@ -1003,7 +1003,7 @@ function askTutorSubnet(){
 /* ============== CLI SIMULATION ============== */
 let currentLab=null;
 function initCli(){
-  refreshLabHist();termReset();
+  refreshLabHist();if(!window._termCmds||!window._termCmds.length){termReset();}
   if(!localStorage.getItem('ccnaApiKey')){document.getElementById('labScenario').innerHTML='<p style="color:var(--warn);font-size:14px">먼저 "AI 튜터" 탭에서 API 키를 저장하세요.</p>';return;}
   if(!currentLab)document.getElementById('labScenario').innerHTML='<p style="color:var(--muted);font-size:14px">"새 랩 생성"을 누르면 실제 시험형 랩 과제(영어 토폴로지 + 요구사항)가 만들어집니다. 설정을 입력하고 "채점"을 누르면 AI가 요구사항별로 검증해 줍니다. 모르면 "힌트"나 "튜터에게 질문"을 쓰세요.</p>';
 }
