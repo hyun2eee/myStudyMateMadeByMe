@@ -68,6 +68,7 @@
   .chip{background:var(--accent);color:#06283d;padding:9px 12px;border-radius:8px;
     cursor:grab;font-weight:600;font-size:14px;user-select:none;text-align:center}
   .chip.placed{opacity:.4;cursor:default}
+  .chip.sel{outline:3px solid var(--accent2)}
   .slot{border:2px dashed var(--line);border-radius:9px;padding:10px;min-height:46px;
     display:flex;align-items:center;gap:8px;background:var(--panel2)}
   .slot .label{flex:1;color:var(--muted);font-size:14px}
@@ -181,10 +182,12 @@
       </span>
       <span id="qcount"></span>
     </div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
       <button class="btn" style="font-size:13px;padding:7px 14px" onclick="generateAIQuestion()">AI 새 문제 생성</button>
-      <span style="font-size:12px;color:var(--muted)">선택한 도메인으로 AI가 무한히 새 문제를 만듭니다 (AI 튜터 키 사용)</span>
+      <button class="btn sec" style="font-size:13px;padding:7px 14px" onclick="startBank()">전체 은행 순환</button>
+      <button class="btn sec" style="font-size:13px;padding:7px 14px" onclick="fillBank()">AI로 은행 채우기 (+20)</button>
     </div>
+    <div id="bankInfo" style="font-size:12px;color:var(--muted);margin-bottom:8px"></div>
     <div class="progressbar"><div id="qbar"></div></div>
     <div id="quizBody"></div>
   </div>
@@ -242,24 +245,40 @@
   </div>
 </section>
 
-<!-- CLI -->
+<!-- CLI / LAB -->
 <section id="cli" class="view">
   <div class="card">
     <div class="meta">
-      <span>시나리오: <select id="cliSel" onchange="loadCli()"></select></span>
+      <span>랩 주제:
+        <select id="cliSel">
+          <option value="random">랜덤(전체)</option>
+          <option value="OSPFv2 single-area configuration">OSPF</option>
+          <option value="Static and default routing">정적/기본 경로</option>
+          <option value="VLANs and 802.1Q trunking">VLAN/트렁크</option>
+          <option value="Inter-VLAN routing (router-on-a-stick or SVI)">Inter-VLAN</option>
+          <option value="Standard and extended ACLs">ACL</option>
+          <option value="NAT and PAT overload">NAT/PAT</option>
+          <option value="EtherChannel with LACP">EtherChannel</option>
+          <option value="DHCP server and relay (ip helper-address)">DHCP</option>
+          <option value="Switch port security">포트 보안</option>
+          <option value="HSRP first-hop redundancy">HSRP</option>
+        </select>
+      </span>
       <span id="cliStat"></span>
     </div>
-    <p id="cliTask" style="font-size:15px"></p>
-    <p id="cliTopo" style="color:var(--muted);font-size:13px"></p>
-    <textarea id="cliInput" rows="7" placeholder="여기에 명령어를 한 줄씩 입력하세요…"
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <button class="btn" onclick="generateLab()">새 랩 생성 (AI)</button>
+      <span style="font-size:12px;color:var(--muted)">실제 시험형 영어 토폴로지·요구사항이 생성됩니다 (AI 튜터 키 사용)</span>
+    </div>
+    <div id="labScenario"></div>
+    <textarea id="cliInput" rows="9" placeholder="IOS 설정 명령어를 한 줄씩 입력하세요 (예: interface gi0/0 / ip address ... / no shutdown)"
       style="font-family:Consolas,monospace;font-size:14px;color:#7dd3fc;background:#0b1220"></textarea>
     <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn green" onclick="checkCli()">채점</button>
-      <button class="btn sec" onclick="toggleHint()">힌트</button>
-      <button class="btn sec" onclick="showCliAnswer()">정답 보기</button>
-      <button class="btn sec" onclick="loadCli()">초기화</button>
+      <button class="btn green" onclick="gradeLab()">채점 (AI 검증)</button>
+      <button class="btn sec" onclick="labHint()">힌트</button>
+      <button class="btn sec" onclick="labAnswer()">예시 정답</button>
+      <button class="btn sec" onclick="askTutorLab()">튜터에게 질문</button>
     </div>
-    <div class="explain" id="cliHint"></div>
     <div class="explain" id="cliResult"></div>
   </div>
 </section>
@@ -521,7 +540,7 @@ document.querySelectorAll('nav button').forEach(b=>{
     document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
     document.getElementById(b.dataset.v).classList.add('active');
-    if(b.dataset.v==='quiz') startQuiz();
+    if(b.dataset.v==='quiz'){if(quizPool.length===0)startQuiz();updateBankInfo();}
     if(b.dataset.v==='dnd') initDndSelect();
     if(b.dataset.v==='subnet') newSubnet();
     if(b.dataset.v==='cli') initCli();
@@ -584,21 +603,37 @@ function renderWrong(){
   document.getElementById('wrongCount').textContent=`${w.length}문항`;
   const list=document.getElementById('wrongList');
   if(w.length===0){list.innerHTML='<p style="color:var(--muted)">오답이 없습니다. 퀴즈에서 틀린 문제가 자동으로 모입니다.</p>';return;}
-  list.innerHTML=w.map(id=>{
-    const q=QUESTIONS[id];if(!q)return '';
-    const ans=Array.isArray(q.a)?q.a.map(i=>q.o[i]).join(', '):q.o[q.a];
+  list.innerHTML=w.map((e,i)=>{
+    const q=resolveWrong(e);if(!q)return '';
+    const ans=Array.isArray(q.a)?q.a.map(j=>q.o[j]).join(', '):q.o[q.a];
     const exh=q.ex?`<pre class="exhibit" style="font-size:12px">${escapeHtml(q.ex)}</pre>`:'';
+    const tag=q.ai?' <span style="font-size:11px;color:var(--accent)">[AI]</span>':'';
     return `<div style="border-bottom:1px solid var(--line);padding:12px 0">
-      ${exh}<div style="font-weight:600">${escapeHtml(q.q)}</div>
-      <div style="font-size:13px;color:var(--muted);margin:3px 0">해석: ${escapeHtml(q.t)}</div>
+      ${exh}<div style="font-weight:600">${escapeHtml(q.q)}${tag}</div>
+      <div style="font-size:13px;color:var(--muted);margin:3px 0">해석: ${escapeHtml(q.t||'')}</div>
       <div style="font-size:14px"><b style="color:var(--accent2)">정답:</b> ${escapeHtml(ans)}</div>
-      <div style="font-size:13px;color:var(--muted)">설명: ${q.e}</div></div>`;
+      <div style="font-size:13px;color:var(--muted)">설명: ${q.e||''}</div>
+      <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn sec" style="font-size:12px;padding:4px 10px" onclick="startExplainWrong(${i})">설명훈련으로 교정</button><button class="btn sec" style="font-size:12px;padding:4px 10px" onclick="delWrongAt(${i})">삭제</button></div></div>`;
   }).join('');
+}
+function delWrongAt(i){const w=getWrong();w.splice(i,1);setWrong(w);renderReport();}
+function startExplainWrong(i){const q=resolveWrong(getWrong()[i]);if(q)startExplainQ(q);}
+function startExplainWith(id){startExplainQ(QUESTIONS[id]);}
+function startExplainQ(q){
+  if(!q)return;
+  switchTo('explain');
+  exTarget=+(localStorage.getItem('ccnaTarget')||85);
+  const ts=document.getElementById('exTarget');if(ts)ts.value=String(exTarget);
+  renderExStats();
+  curExplain=q;exHist=[];window._exBusy=false;
+  exHist.push({role:'assistant',content:`이 개념을 연습해볼게요. 바로 설명에 도전해도 되고, 잘 모르겠으면 아래 "먼저 설명 듣기" 버튼을 누르면 제가 쉽게 가르쳐 드린 뒤 따라 설명하게 해줄게요.\n\n**Q.** ${q.q}\n\n(해석: ${q.t})`});
+  document.getElementById('exArea').innerHTML=`<div id="exChat"></div><div id="exScore"></div><div id="exControls" style="margin-top:10px"><div style="display:flex;gap:8px"><textarea id="exInput" rows="3" placeholder="설명을 작성하고 Enter (또는 보내기)…" style="flex:1;margin:0"></textarea><button class="btn green" onclick="sendExplainTurn()">보내기</button></div><div style="margin-top:8px"><button class="btn sec" style="font-size:13px;padding:6px 12px" onclick="teachExplain()">먼저 설명 듣기 (모를 때)</button></div></div>`;
+  renderExChat();
+  const inp=document.getElementById('exInput');if(inp){inp.focus();inp.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendExplainTurn();}};}
 }
 function clearWrong(){if(confirm('오답노트를 비울까요?')){setWrong([]);renderReport();}}
 function startReview(){
-  const wset=new Set(getWrong());
-  const pool=QUESTIONS.filter(q=>wset.has(q.id));
+  const pool=getWrong().map(resolveWrong).filter(Boolean);
   if(pool.length===0){alert('오답노트가 비어 있습니다. 먼저 퀴즈를 풀어보세요.');return;}
   reviewMode=true;quizPool=shuffle(pool);qi=0;
   document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));
@@ -611,10 +646,34 @@ function startReview(){
 /* ============== QUIZ ENGINE (single + multi + exhibit) ============== */
 let quizPool=[],qi=0;
 function startQuiz(){
-  reviewMode=false;window.aiMode=false;aiBuffer=null;aiBufferSel=null;
+  reviewMode=false;window.aiMode=false;window.bankMode=false;aiBuffer=null;aiBufferSel=null;
   const dom=document.getElementById('domainSel').value;
   quizPool=shuffle(QUESTIONS.filter(q=>dom==='all'||q.d===dom));
-  qi=0;renderQ();
+  qi=0;renderQ();updateBankInfo();
+}
+function getBank(){try{return JSON.parse(localStorage.getItem('ccnaAIBank')||'[]');}catch(e){return [];}}
+function setBank(a){localStorage.setItem('ccnaAIBank',JSON.stringify(a.slice(-400)));}
+function masterPool(){return QUESTIONS.concat(getBank());}
+function updateBankInfo(){const el=document.getElementById('bankInfo');if(el)el.textContent='문제은행: 고정 '+QUESTIONS.length+' + AI저장 '+getBank().length+' = 총 '+(QUESTIONS.length+getBank().length)+'문항 (목표 200+)';}
+function addToBank(pool){const bank=getBank();const seen=new Set(bank.map(q=>(q.q||'').toLowerCase().trim()).concat(QUESTIONS.map(q=>q.q.toLowerCase().trim())));let added=0;pool.forEach(q=>{const k=(q.q||'').toLowerCase().trim();if(k&&!seen.has(k)){seen.add(k);bank.push({d:q.d,q:q.q,o:q.o,a:q.a,t:q.t||'',e:q.e||'',ex:q.ex,ai:true,id:'bk'+Date.now().toString(36)+Math.random().toString(36).slice(2,6)});added++;}});setBank(bank);return added;}
+function saveBankSeq(){try{localStorage.setItem('ccnaSeq',JSON.stringify({ids:quizPool.map(q=>q.id),pos:qi}));}catch(e){}}
+function startBank(){
+  window.aiMode=false;window.bankMode=true;reviewMode=false;
+  const pool=masterPool();const byId={};pool.forEach(q=>byId[q.id]=q);
+  let seq=null;try{seq=JSON.parse(localStorage.getItem('ccnaSeq'));}catch(e){}
+  let ordered;
+  if(seq&&Array.isArray(seq.ids)&&seq.ids.length===pool.length&&seq.ids.every(id=>byId[id])&&seq.pos<seq.ids.length){ordered=seq.ids.map(id=>byId[id]);qi=seq.pos;}
+  else{ordered=shuffle(pool);qi=0;}
+  quizPool=ordered;saveBankSeq();renderQ();updateBankInfo();
+}
+async function fillBank(){
+  if(!localStorage.getItem('ccnaApiKey')){alert('AI 튜터 탭에서 API 키를 먼저 저장하세요.');return;}
+  const el=document.getElementById('bankInfo');const batches=4;
+  for(let b=0;b<batches;b++){
+    if(el)el.textContent='AI로 문제 생성 중… 배치 '+(b+1)+'/'+batches+' (현재 '+getBank().length+'문항)';
+    try{const d=pickDomain();await fetchAIBatch(d.dk,d.dn);}catch(e){if(el)el.textContent='오류: '+e.message;return;}
+  }
+  updateBankInfo();
 }
 let aiCounter=0,aiBuffer=null,aiBufferSel=null,aiPrefetching=false;
 function pickDomain(){
@@ -637,6 +696,7 @@ async function fetchAIBatch(dk,dn){
   const arr=JSON.parse(jm[0]);
   const pool=arr.filter(r=>r&&Array.isArray(r.o)&&r.o.length===4&&typeof r.a==='number'&&r.a>=0&&r.a<=3&&r.q).map(r=>{const q={d:dk,q:r.q,o:r.o,a:r.a,t:r.t||'',e:r.e||'',ai:true,id:'ai'+(++aiCounter)};if(r.ex&&String(r.ex).trim())q.ex=r.ex;return q;});
   if(!pool.length)throw new Error('생성 결과가 비었습니다. 다시 시도하세요.');
+  addToBank(pool);updateBankInfo();
   return pool;
 }
 function prefetchAI(){
@@ -645,6 +705,7 @@ function prefetchAI(){
   fetchAIBatch(d.dk,d.dn).then(pool=>{aiBuffer=pool;aiBufferSel=d.sel;}).catch(()=>{}).finally(()=>{aiPrefetching=false;});
 }
 function nextQuestion(){
+  if(window.bankMode){qi++;if(qi>=quizPool.length){quizPool=shuffle(quizPool);qi=0;alert('전체 문제를 한 바퀴 다 풀었어요! 다시 섞어서 계속합니다.');}saveBankSeq();renderQ();return;}
   if(window.aiMode){
     if(qi<quizPool.length-1){qi++;renderQ();if(qi>=quizPool.length-2)prefetchAI();}
     else if(aiBuffer&&aiBufferSel===document.getElementById('domainSel').value){quizPool=aiBuffer;aiBuffer=null;qi=0;renderQ();prefetchAI();}
@@ -654,7 +715,7 @@ function nextQuestion(){
 async function generateAIQuestion(){
   const key=(localStorage.getItem('ccnaApiKey')||'').trim();
   if(!key){alert('AI 문제 생성은 AI 튜터 탭에서 API 키를 먼저 저장해야 합니다.');return;}
-  window.aiMode=true;reviewMode=false;
+  window.aiMode=true;reviewMode=false;window.bankMode=false;
   const sel=document.getElementById('domainSel').value;
   if(aiBuffer&&aiBufferSel===sel){quizPool=aiBuffer;aiBuffer=null;qi=0;renderQ();prefetchAI();return;}
   const d=pickDomain();
@@ -714,10 +775,12 @@ function finishQ(correct,q){
   const sub=document.getElementById('subBtn');if(sub)sub.style.display='none';
   const s=getStats();s.total++;if(correct){s.correct++;s.streak++;}else{s.streak=0;}setStats(s);
   const dom=getDom();if(!dom[q.d])dom[q.d]={t:0,c:0};dom[q.d].t++;if(correct)dom[q.d].c++;setDom(dom);
-  if(!q.ai){let w=getWrong();
-  if(correct){if(reviewMode){w=w.filter(id=>id!==q.id);setWrong(w);}}
-  else{if(!w.includes(q.id)){w.push(q.id);setWrong(w);}}}
+  let w=getWrong();
+  if(correct){if(reviewMode){w=w.filter(e=>!sameWrong(e,q));setWrong(w);}}
+  else{if(!w.some(e=>sameWrong(e,q))){w.push(q.ai?{d:q.d,q:q.q,o:q.o,a:q.a,e:q.e,t:q.t,ex:q.ex,ai:true}:q.id);setWrong(w);}}
 }
+function sameWrong(e,q){return (typeof e==='number')?(!q.ai&&e===q.id):(e&&e.q===q.q);}
+function resolveWrong(e){return (typeof e==='number')?QUESTIONS[e]:e;}
 function answerSingle(btn,idx,q){
   if(document.querySelector('.opt.disabled'))return;
   const correct=idx===q.a;
@@ -770,7 +833,7 @@ function initDndSelect(){
 function loadDnd(){
   dndCur=+document.getElementById('dndSel').value||0;
   const set=DND_SETS[dndCur];
-  document.getElementById('dndPrompt').textContent=set.prompt;
+  document.getElementById('dndPrompt').textContent=set.prompt+'  (모바일: 보기를 탭한 뒤 정답 칸을 탭하면 배치됩니다)';
   document.getElementById('dndScore').textContent='';
   document.getElementById('dndExplain').classList.remove('show');
   const bank=document.getElementById('dndBank'),targets=document.getElementById('dndTargets');
@@ -778,6 +841,7 @@ function loadDnd(){
   shuffle(set.pairs.map((p,i)=>({txt:p[0],id:i}))).forEach(c=>{
     const el=document.createElement('div');el.className='chip';el.draggable=true;el.textContent=c.txt;el.dataset.id=c.id;
     el.ondragstart=()=>{dragId=c.id;};
+    el.onclick=()=>{if(el.classList.contains('placed'))return;document.querySelectorAll('.chip.sel').forEach(x=>x.classList.remove('sel'));el.classList.add('sel');dragId=c.id;};
     bank.appendChild(el);
   });
   set.pairs.forEach((p,i)=>{
@@ -786,6 +850,7 @@ function loadDnd(){
     slot.ondragover=e=>{e.preventDefault();slot.classList.add('over');};
     slot.ondragleave=()=>slot.classList.remove('over');
     slot.ondrop=e=>{e.preventDefault();slot.classList.remove('over');dropChip(slot);};
+    slot.onclick=()=>{if(dragId!==null)dropChip(slot);};
     targets.appendChild(slot);
   });
 }
@@ -797,14 +862,20 @@ function dropChip(slot){
   if(ex){document.querySelector('.chip[data-id="'+ex.dataset.id+'"]').classList.remove('placed');ex.remove();}
   const d=document.createElement('span');d.className='dropped';d.textContent=chip.textContent;d.dataset.id=dragId;
   d.onclick=()=>{chip.classList.remove('placed');d.remove();slot.classList.remove('ok','no');};
-  slot.appendChild(d);chip.classList.add('placed');slot.classList.remove('ok','no');dragId=null;
+  slot.appendChild(d);chip.classList.add('placed');slot.classList.remove('ok','no');document.querySelectorAll('.chip.sel').forEach(x=>x.classList.remove('sel'));dragId=null;
 }
 function checkDnd(){
   const slots=document.querySelectorAll('#dndTargets .slot');let ok=0;
   slots.forEach(s=>{const d=s.querySelector('.dropped');s.classList.remove('ok','no');
     if(d&&+d.dataset.id===+s.dataset.answer){s.classList.add('ok');ok++;}else s.classList.add('no');});
   document.getElementById('dndScore').textContent=`${ok} / ${slots.length} 정답`;
-  const ex=document.getElementById('dndExplain');ex.innerHTML='해설: '+DND_SETS[dndCur].note;ex.classList.add('show');
+  const ex=document.getElementById('dndExplain');ex.innerHTML='해설: '+DND_SETS[dndCur].note+'<br><button class="btn sec" style="font-size:13px;padding:6px 12px;margin-top:8px" onclick="askTutorDnd()">이 주제 튜터에게 질문</button>';ex.classList.add('show');
+}
+function askTutorDnd(){
+  const set=DND_SETS[dndCur];
+  const pairs=set.pairs.map(p=>p[0]+' = '+p[1]).join('\n');
+  const text='CCNA 드래그앤드롭 주제 "'+set.name+'"를 한국어로 쉽게 설명해줘. 각 항목이 왜 그 정답과 매칭되는지도 알려줘.\n\n'+pairs;
+  switchTo('tutor');initTutor();sendTutor(text);
 }
 
 /* ============== SUBNET TRAINER ============== */
@@ -834,6 +905,7 @@ function newSubnet(){
   ];
   const t=types[Math.random()*types.length|0];
   curSub={ans:t.a,detail:`network ${intToIp(net)}/${cidr} · mask ${intToIp(mask)} · broadcast ${intToIp(bcast)} · usable ${hosts} · range ${intToIp(firstH)} ~ ${intToIp(lastH)}`};
+  window._subCtx=`주어진 주소 ${intToIp(ipInt)} /${cidr}. 질문: ${t.q.replace(/<[^>]+>/g,'')}`;
   document.getElementById('subBody').innerHTML=`
     <p style="font-size:17px">Given: <code style="font-size:16px;background:#0b1220;padding:3px 8px;border-radius:5px;color:#7dd3fc">${intToIp(ipInt)} /${cidr}</code></p>
     <p style="font-size:16px">${t.q}</p>
@@ -841,6 +913,7 @@ function newSubnet(){
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn green" onclick="checkSubnet()">채점</button>
       <button class="btn sec" onclick="document.getElementById('subHintBox').classList.toggle('show')">힌트</button>
+      <button class="btn sec" onclick="askTutorSubnet()">튜터에게 질문</button>
       <button class="btn sec" onclick="newSubnet()">다음</button>
     </div>
     <div class="explain" id="subHintBox">힌트: ${t.hint}</div>
@@ -858,60 +931,89 @@ function checkSubnet(){
   subStreak=ok?subStreak+1:0;
   document.getElementById('subStat').textContent=`연속 정답 ${subStreak}`;
 }
+function askTutorSubnet(){
+  const ctx=window._subCtx?('\n\n현재 문제: '+window._subCtx):'';
+  switchTo('tutor');initTutor();
+  sendTutor('서브넷팅을 한국어로 쉽게 가르쳐줘. 네트워크 주소·브로드캐스트·사용가능 호스트·서브넷 마스크를 빨리 구하는 방법을 단계별로 알려줘.'+ctx);
+}
 
 /* ============== CLI SIMULATION ============== */
-const CLI_SCENARIOS=[
- {name:"OSPF #1 — 기본 활성화",task:"R1에서 OSPF 프로세스 1을 활성화하고, 192.168.1.0/24 네트워크를 area 0에 광고하세요.",topo:"R1 — Gi0/0: 192.168.1.1/24",
-  steps:[{desc:"OSPF 프로세스 1 진입",pat:[/^router\s+ospf\s+1$/]},{desc:"192.168.1.0 네트워크 area 0 광고",pat:[/^network\s+192\.168\.1\.0\s+0\.0\.0\.255\s+area\s+0$/]}],
-  answer:["router ospf 1","network 192.168.1.0 0.0.0.255 area 0"]},
- {name:"OSPF #2 — Router ID + 두 네트워크",task:"R2에서 OSPF 프로세스 1을 켜고, Router ID를 2.2.2.2로 지정한 뒤 10.0.0.0/24와 10.0.1.0/24를 area 0에 광고하세요.",topo:"R2 — Gi0/0: 10.0.0.1/24, Gi0/1: 10.0.1.1/24",
-  steps:[{desc:"OSPF 프로세스 1 진입",pat:[/^router\s+ospf\s+1$/]},{desc:"Router ID 2.2.2.2",pat:[/^router-id\s+2\.2\.2\.2$/]},{desc:"10.0.0.0 area 0 광고",pat:[/^network\s+10\.0\.0\.0\s+0\.0\.0\.255\s+area\s+0$/]},{desc:"10.0.1.0 area 0 광고",pat:[/^network\s+10\.0\.1\.0\s+0\.0\.0\.255\s+area\s+0$/]}],
-  answer:["router ospf 1","router-id 2.2.2.2","network 10.0.0.0 0.0.0.255 area 0","network 10.0.1.0 0.0.0.255 area 0"]},
- {name:"표준 ACL #1",task:"표준 ACL 10을 만들어 192.168.10.0/24만 허용하고, 인터페이스 Gi0/1 아웃바운드에 적용하세요.",topo:"표준 ACL은 목적지 가깝게 — Gi0/1 out에 적용",
-  steps:[{desc:"192.168.10.0/24 허용 규칙",pat:[/^access-list\s+10\s+permit\s+192\.168\.10\.0\s+0\.0\.0\.255$/]},{desc:"인터페이스 Gi0/1 진입",pat:[/^int(erface)?\s+\S*0\/1$/i]},{desc:"ACL 10 outbound 적용",pat:[/^ip\s+access-group\s+10\s+out$/]}],
-  answer:["access-list 10 permit 192.168.10.0 0.0.0.255","interface Gi0/1","ip access-group 10 out"]},
- {name:"확장 ACL #1 — Telnet 차단",task:"확장 ACL 100을 만들어 192.168.1.0/24 → 서버 10.1.1.5의 Telnet(23)을 차단하고, 그 외 IP는 허용. Gi0/0 인바운드에 적용.",topo:"확장 ACL은 출발지 가깝게 — Gi0/0 in에 적용",
-  steps:[{desc:"telnet(23) 차단 규칙",pat:[/^access-list\s+100\s+deny\s+tcp\s+192\.168\.1\.0\s+0\.0\.0\.255\s+host\s+10\.1\.1\.5\s+eq\s+(23|telnet)$/]},{desc:"나머지 IP 허용",pat:[/^access-list\s+100\s+permit\s+ip\s+any\s+any$/]},{desc:"인터페이스 Gi0/0 진입",pat:[/^int(erface)?\s+\S*0\/0$/i]},{desc:"ACL 100 inbound 적용",pat:[/^ip\s+access-group\s+100\s+in$/]}],
-  answer:["access-list 100 deny tcp 192.168.1.0 0.0.0.255 host 10.1.1.5 eq 23","access-list 100 permit ip any any","interface Gi0/0","ip access-group 100 in"]},
- {name:"VLAN + 트렁크",task:"스위치에 VLAN 10(SALES)을 만들고, Fa0/2를 VLAN 10 access 포트로, Gi0/1을 트렁크로 설정하세요.",topo:"SW1 — Fa0/2: PC, Gi0/1: 다른 스위치로 연결",
-  steps:[{desc:"VLAN 10 생성",pat:[/^vlan\s+10$/]},{desc:"이름 SALES",pat:[/^name\s+sales$/i]},{desc:"Fa0/2 access 모드",pat:[/^switchport\s+mode\s+access$/]},{desc:"Fa0/2를 VLAN 10에 할당",pat:[/^switchport\s+access\s+vlan\s+10$/]},{desc:"Gi0/1 트렁크 모드",pat:[/^switchport\s+mode\s+trunk$/]}],
-  answer:["vlan 10","name SALES","interface Fa0/2","switchport mode access","switchport access vlan 10","interface Gi0/1","switchport mode trunk"]},
-];
-let cliCur=0;
+let currentLab=null;
 function initCli(){
-  const sel=document.getElementById('cliSel');
-  if(sel.options.length===0){CLI_SCENARIOS.forEach((s,i)=>{const o=document.createElement('option');o.value=i;o.textContent=s.name;sel.appendChild(o);});}
-  loadCli();
+  if(!localStorage.getItem('ccnaApiKey')){document.getElementById('labScenario').innerHTML='<p style="color:var(--warn);font-size:14px">먼저 "AI 튜터" 탭에서 API 키를 저장하세요.</p>';return;}
+  if(!currentLab)document.getElementById('labScenario').innerHTML='<p style="color:var(--muted);font-size:14px">"새 랩 생성"을 누르면 실제 시험형 랩 과제(영어 토폴로지 + 요구사항)가 만들어집니다. 설정을 입력하고 "채점"을 누르면 AI가 요구사항별로 검증해 줍니다. 모르면 "힌트"나 "튜터에게 질문"을 쓰세요.</p>';
 }
-function loadCli(){
-  cliCur=+document.getElementById('cliSel').value||0;
-  const s=CLI_SCENARIOS[cliCur];
-  document.getElementById('cliTask').innerHTML=s.task;
-  document.getElementById('cliTopo').textContent=s.topo;
-  document.getElementById('cliInput').value='';
-  document.getElementById('cliHint').classList.remove('show');
-  document.getElementById('cliResult').classList.remove('show');
-  document.getElementById('cliStat').textContent='';
+function labTopic(){const v=document.getElementById('cliSel').value;return v==='random'?'a randomly chosen core CCNA configuration topic (OSPF, static routing, VLAN/trunk, inter-VLAN, ACL, NAT/PAT, EtherChannel, DHCP, port security, or HSRP)':v;}
+async function callClaude(sys,user,maxTok){
+  const key=(localStorage.getItem('ccnaApiKey')||'').trim();
+  if(!key)throw new Error('API 키가 없습니다. AI 튜터 탭에서 저장하세요.');
+  const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':key,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:getModel(),max_tokens:maxTok||1200,system:sys,messages:[{role:'user',content:user}]})});
+  const data=await res.json();
+  if(data.error)throw new Error(data.error.message||'API 오류');
+  return (data.content||[]).map(c=>c.text||'').join('');
 }
-function checkCli(){
-  const s=CLI_SCENARIOS[cliCur];
-  const lines=document.getElementById('cliInput').value.split('\n').map(l=>l.trim().toLowerCase().replace(/\s+/g,' ')).filter(x=>x);
-  let html='<b>채점 결과</b><br>';let done=0;
-  s.steps.forEach(st=>{const hit=lines.some(l=>st.pat.some(p=>p.test(l)));if(hit)done++;html+=(hit?'[O] ':'[ ] ')+st.desc+'<br>';});
-  const res=document.getElementById('cliResult');const pass=done===s.steps.length;
-  res.innerHTML=html+`<br>${done} / ${s.steps.length} 완료`+(pass?' — 모두 정확합니다.':' — 부족한 항목을 확인하세요.');
-  res.classList.add('show');
-  document.getElementById('cliStat').textContent=pass?'통과':`${done}/${s.steps.length}`;
+async function generateLab(){
+  if(!localStorage.getItem('ccnaApiKey')){alert('AI 튜터 탭에서 API 키를 먼저 저장하세요.');return;}
+  const sc=document.getElementById('labScenario');
+  sc.innerHTML='<p class="msg ai think">AI가 실전 랩을 만드는 중…</p>';
+  document.getElementById('cliResult').classList.remove('show');document.getElementById('cliInput').value='';document.getElementById('cliStat').textContent='';
+  const sys="You are a Cisco CCNA 200-301 lab exam author. Create realistic performance-based lab (sim) tasks that match the real exam: a small topology, an addressing table, and clear multi-step configuration requirements. Output ONLY a JSON object. Do not use emojis.";
+  const user=`Create ONE realistic CCNA 200-301 hands-on LAB task on: ${labTopic()}. Match real exam difficulty with several specific requirements (exact interfaces, IPs, subnet masks, VLAN IDs, etc.). Provide an ASCII topology diagram (routers/switches/PCs with interface labels) and an addressing table as plain text. Requirements must be in English. Return ONLY JSON: {"title":"<short English title>","scenario":"<1-2 sentence English context>","topology":"<ASCII topology and addressing table as plain text>","requirements":["<English requirement 1>","<English requirement 2>","..."],"device":"<device to configure, e.g. R1>"}`;
+  try{
+    const raw=await callClaude(sys,user,1600);
+    const jm=raw.match(/\{[\s\S]*\}/);if(!jm)throw new Error('형식 오류. 다시 시도하세요.');
+    currentLab=JSON.parse(jm[0]);renderLab();
+  }catch(e){sc.innerHTML='<div class="explain show">[오류] '+escapeHtml(e.message)+' <button class="btn sec" style="margin-top:6px" onclick="generateLab()">다시</button></div>';}
 }
-function toggleHint(){
-  const s=CLI_SCENARIOS[cliCur];const h=document.getElementById('cliHint');
-  h.innerHTML='<b>필요한 단계</b><br>'+s.steps.map((x,i)=>`${i+1}. ${x.desc}`).join('<br>');
-  h.classList.toggle('show');
+function renderLab(){
+  const l=currentLab;
+  document.getElementById('labScenario').innerHTML=
+    '<h3 style="margin:4px 0">'+escapeHtml(l.title||'CCNA Lab')+'</h3>'+
+    '<p style="font-size:14px">'+escapeHtml(l.scenario||'')+'</p>'+
+    (l.topology?'<pre class="exhibit">'+escapeHtml(l.topology)+'</pre>':'')+
+    '<p style="font-weight:700;margin:8px 0 4px">Requirements'+(l.device?(' ('+escapeHtml(l.device)+')'):'')+':</p>'+
+    '<ol style="margin:4px 0 4px 18px;font-size:14px">'+(l.requirements||[]).map(r=>'<li>'+escapeHtml(r)+'</li>').join('')+'</ol>';
 }
-function showCliAnswer(){
-  const s=CLI_SCENARIOS[cliCur];const res=document.getElementById('cliResult');
-  res.innerHTML='<b>예시 정답</b><br><code style="display:block;white-space:pre;background:#0b1220;color:#7dd3fc;padding:10px;border-radius:6px;margin-top:6px">'+escapeHtml(s.answer.join('\n'))+'</code><br><span style="color:var(--muted);font-size:13px">인터페이스 표기·eq 23/telnet 같은 동등 표현은 정답 처리됩니다.</span>';
-  res.classList.add('show');
+async function gradeLab(){
+  if(!currentLab){alert('먼저 "새 랩 생성"을 누르세요.');return;}
+  const cfg=document.getElementById('cliInput').value.trim();
+  if(!cfg){alert('설정 명령어를 입력하세요.');return;}
+  const res=document.getElementById('cliResult');res.className='explain show';res.innerHTML='<p class="msg ai think">AI가 설정을 검증하는 중…</p>';
+  const sys="You are a strict but fair Cisco CCNA lab grader. Given a lab's requirements and the learner's IOS configuration, check each requirement. Accept equivalent valid syntax and interface abbreviations (e.g. int g0/0). Output ONLY a JSON object. All text fields in Korean. Do not use emojis.";
+  const user=`LAB\nTitle: ${currentLab.title}\nTopology:\n${currentLab.topology}\nRequirements: ${JSON.stringify(currentLab.requirements)}\nDevice: ${currentLab.device||''}\n\nLEARNER CONFIG:\n${cfg}\n\nGrade strictly per requirement. Return ONLY JSON: {"score":<0-100 integer>,"checks":[{"ok":<true or false>,"req":"<the requirement in Korean>","note":"<Korean: correct, or exactly what is wrong/missing>"}],"summary":"<Korean overall feedback and next step>"}`;
+  try{
+    const raw=await callClaude(sys,user,1600);
+    const jm=raw.match(/\{[\s\S]*\}/);if(!jm)throw new Error('채점 형식 오류. 다시 시도하세요.');
+    const r=JSON.parse(jm[0]);
+    const score=Math.max(0,Math.min(100,Math.round(Number(r.score)||0)));
+    const col=score>=85?'var(--accent2)':(score>=50?'var(--warn)':'var(--bad)');
+    let html='<div style="font-weight:700;font-size:16px">랩 점수: '+score+'%</div><div class="progressbar"><div style="width:'+score+'%;background:'+col+'"></div></div>';
+    (r.checks||[]).forEach(c=>{const mk=c.ok?'[O] ':'[X] ';const cc=c.ok?'var(--accent2)':'var(--bad)';html+='<div style="margin:7px 0;font-size:14px"><span style="color:'+cc+';font-weight:700">'+mk+'</span><b>'+escapeHtml(c.req||'')+'</b><br><span style="color:var(--muted)">'+escapeHtml(c.note||'')+'</span></div>';});
+    if(r.summary)html+='<div style="margin-top:8px"><b>총평:</b> '+escapeHtml(r.summary)+'</div>';
+    html+='<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sec" style="font-size:13px;padding:6px 12px" onclick="askTutorLab()">이 랩 튜터에게 질문</button><button class="btn sec" style="font-size:13px;padding:6px 12px" onclick="labAnswer()">예시 정답 보기</button></div>';
+    res.innerHTML=html;document.getElementById('cliStat').textContent=score+'%';
+  }catch(e){res.innerHTML='[오류] '+escapeHtml(e.message);}
+}
+async function labHint(){
+  if(!currentLab){alert('먼저 "새 랩 생성"을 누르세요.');return;}
+  const res=document.getElementById('cliResult');res.className='explain show';res.innerHTML='<p class="msg ai think">힌트 생성 중…</p>';
+  try{
+    const raw=await callClaude("You are a CCNA lab tutor. Give concise Korean hints about which commands and order to use, WITHOUT giving the full answer. Do not use emojis.","LAB requirements: "+JSON.stringify(currentLab.requirements)+"\nTopology:\n"+currentLab.topology+"\n\n학습자가 막혔어요. 정답을 다 알려주지 말고, 어떤 명령과 순서로 접근해야 하는지 한국어 힌트만 주세요.",800);
+    res.innerHTML='<b>힌트</b><br>'+mdToHtml(raw);
+  }catch(e){res.innerHTML='[오류] '+escapeHtml(e.message);}
+}
+async function labAnswer(){
+  if(!currentLab){alert('먼저 "새 랩 생성"을 누르세요.');return;}
+  const res=document.getElementById('cliResult');res.className='explain show';res.innerHTML='<p class="msg ai think">예시 정답 생성 중…</p>';
+  try{
+    const raw=await callClaude("You are a CCNA lab instructor. Provide a correct, complete IOS configuration for the lab inside a fenced code block, then a brief Korean explanation of each part. Do not use emojis.","LAB\nTitle: "+currentLab.title+"\nTopology:\n"+currentLab.topology+"\nRequirements: "+JSON.stringify(currentLab.requirements)+"\nDevice: "+(currentLab.device||'')+"\n\n예시 정답 설정과 한국어 설명을 주세요.",1800);
+    res.innerHTML='<b>예시 정답</b><br>'+mdToHtml(raw);
+  }catch(e){res.innerHTML='[오류] '+escapeHtml(e.message);}
+}
+function askTutorLab(){
+  if(!currentLab){switchTo('tutor');initTutor();return;}
+  const text='다음 CCNA 랩에 대해 질문할게. 한국어로 도와줘.\n\n제목: '+currentLab.title+'\n토폴로지:\n'+currentLab.topology+'\n요구사항: '+JSON.stringify(currentLab.requirements)+'\n\n이 랩을 어떻게 푸는지 단계별로 쉽게 설명해줘.';
+  switchTo('tutor');initTutor();sendTutor(text);
 }
 
 /* ============== VOCAB ============== */
@@ -1159,11 +1261,11 @@ function renderExChat(){
 function newExplainQuestion(){
   if(!localStorage.getItem('ccnaApiKey')){alert('먼저 AI 튜터 탭에서 API 키를 저장하세요.');return;}
   const mastered=new Set(getMastered());
-  const wrong=getWrong().filter(id=>!mastered.has(id));
-  let pool=wrong.length?wrong:QUESTIONS.map(q=>q.id).filter(id=>!mastered.has(id));
-  if(pool.length===0)pool=QUESTIONS.map(q=>q.id);
-  const id=pool[Math.random()*pool.length|0];
-  curExplain=QUESTIONS[id];exHist=[];window._exBusy=false;
+  const wrongQs=getWrong().map(resolveWrong).filter(q=>q&&!(typeof q.id==='number'&&mastered.has(q.id)));
+  let q;
+  if(wrongQs.length){q=wrongQs[Math.random()*wrongQs.length|0];}
+  else{const ids=QUESTIONS.map(x=>x.id).filter(id=>!mastered.has(id));q=ids.length?QUESTIONS[ids[Math.random()*ids.length|0]]:QUESTIONS[Math.random()*QUESTIONS.length|0];}
+  curExplain=q;exHist=[];window._exBusy=false;
   exHist.push({role:'assistant',content:`이 개념을 연습해볼게요. 바로 설명에 도전해도 되고, 잘 모르겠으면 아래 "먼저 설명 듣기" 버튼을 누르면 제가 쉽게 가르쳐 드린 뒤 따라 설명하게 해줄게요.\n\n**Q.** ${curExplain.q}\n\n(해석: ${curExplain.t})`});
   document.getElementById('exArea').innerHTML=
     `<div id="exChat"></div>
