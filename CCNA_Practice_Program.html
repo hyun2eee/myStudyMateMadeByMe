@@ -119,7 +119,7 @@
   <button data-v="dnd">DnD</button>
   <button data-v="subnet">서브넷</button>
   <button data-v="cli">명령어</button>
-  <button data-v="vocab">단어</button>
+  <button data-v="vocab">단어·명령어</button>
   <button data-v="report">리포트</button>
   <button data-v="tutor">AI 튜터</button>
   <button data-v="explain">설명훈련</button>
@@ -296,6 +296,10 @@
 <section id="vocab" class="view">
   <div class="card">
     <h2>플래시카드</h2>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="btn" id="vmWord" onclick="setVMode('word')">영어 단어</button>
+      <button class="btn sec" id="vmCmd" onclick="setVMode('cmd')">IOS 명령어</button>
+    </div>
     <div class="meta"><span id="vIdx"></span>
       <span><button class="btn sec" onclick="shuffleVocab()">섞기</button></span></div>
     <div class="flash" id="flash" onclick="this.classList.toggle('flip')">
@@ -700,7 +704,7 @@ async function fetchAIBatch(dk,dn){
   const key=(localStorage.getItem('ccnaApiKey')||'').trim();
   if(!key)throw new Error('API 키가 없습니다. AI 튜터 탭에서 키를 저장하세요.');
   const N=5;
-  const sys="You are a senior Cisco CCNA 200-301 exam item writer. Produce exam-accurate, non-trivial questions with realistic, plausible distractors that match the real exam style and difficulty. Exactly one option must be unambiguously correct and the marked index must be correct. Output ONLY a single JSON array and nothing else. Do not use emojis.";
+  const sys="You are a senior Cisco CCNA 200-301 exam item writer. Produce exam-accurate, non-trivial questions with realistic, plausible distractors that match the real exam style and difficulty. Exactly one option must be unambiguously correct and the marked index must be correct. Output ONLY a single JSON array and nothing else. Do not use emojis. Stay STRICTLY within the official CCNA 200-301 exam blueprint (Network Fundamentals, Network Access, IP Connectivity, IP Services, Security Fundamentals, Automation & Programmability). Do NOT use out-of-scope topics such as NETCONF, RESTCONF, YANG, gNMI, deep Python scripting, or CCNP/DevNet-level material. For Automation, stay at CCNA level: SDN/controller concepts, northbound/southbound APIs, REST API characteristics (CRUD/HTTP verbs/data encoding), JSON, and config management tools (Ansible/Puppet/Chef).";
   const user=`Write ${N} DIFFERENT high-quality CCNA 200-301 exam-style multiple-choice questions for the domain "${dn}". Vary subtopics and difficulty; include exhibit-based items (show command output / config / topology as plain text) where realistic. Each item: English stem; exactly 4 English options with exactly ONE correct; a natural Korean translation of the stem; a concise Korean explanation of why the answer is correct and briefly why key distractors are wrong. Double-check that the "a" index points to the truly correct option. Return ONLY a JSON array of ${N} objects: [{"q":"<English stem>","ex":"<exhibit text or empty string>","o":["o1","o2","o3","o4"],"a":<integer 0-3>,"t":"<Korean stem translation>","e":"<Korean explanation>"}]`;
   const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':key,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:getModel(),max_tokens:4000,system:sys,messages:[{role:'user',content:user}]})});
   const data=await res.json();
@@ -902,7 +906,7 @@ function loadDnd(){
 async function generateDnd(){
   if(!localStorage.getItem('ccnaApiKey')){alert('AI 튜터 탭에서 API 키를 먼저 저장하세요.');return;}
   document.getElementById('dndPrompt').textContent='AI가 새 매칭 문제를 만드는 중…';
-  const sys="You create CCNA 200-301 drag-and-drop matching exercises. Output ONLY a JSON object. Do not use emojis.";
+  const sys="You create CCNA 200-301 drag-and-drop matching exercises. Output ONLY a JSON object. Do not use emojis. Stay STRICTLY within the official CCNA 200-301 exam blueprint (Network Fundamentals, Network Access, IP Connectivity, IP Services, Security Fundamentals, Automation & Programmability). Do NOT use out-of-scope topics such as NETCONF, RESTCONF, YANG, gNMI, deep Python scripting, or CCNP/DevNet-level material. For Automation, stay at CCNA level: SDN/controller concepts, northbound/southbound APIs, REST API characteristics (CRUD/HTTP verbs/data encoding), JSON, and config management tools (Ansible/Puppet/Chef).";
   const user='Create ONE CCNA drag-and-drop matching set with 4 to 6 pairs on a core CCNA topic. Left side = a term or scenario (Korean or English ok), right side = the matching answer (short English term or number). All right-side answers MUST be unique. Add a short Korean note. Return ONLY JSON: {"name":"<short Korean title>","prompt":"<short Korean instruction>","pairs":[["left1","right1"],["left2","right2"]],"note":"<Korean explanation>"}';
   try{
     const raw=await callClaude(sys,user,900);
@@ -1021,7 +1025,7 @@ async function generateLab(){
   const sc=document.getElementById('labScenario');
   sc.innerHTML='<p class="msg ai think">AI가 실전 랩을 만드는 중…</p>';
   document.getElementById('cliResult').classList.remove('show');document.getElementById('cliInput').value='';document.getElementById('cliStat').textContent='';
-  const sys="You are a Cisco CCNA 200-301 lab exam author. Create realistic performance-based lab (sim) tasks that match the real exam: a small topology, an addressing table, and clear multi-step configuration requirements. Output ONLY a JSON object. Do not use emojis.";
+  const sys="You are a Cisco CCNA 200-301 lab exam author. Create realistic performance-based lab (sim) tasks that match the real exam: a small topology, an addressing table, and clear multi-step configuration requirements. Output ONLY a JSON object. Do not use emojis. Stay STRICTLY within the official CCNA 200-301 exam blueprint (Network Fundamentals, Network Access, IP Connectivity, IP Services, Security Fundamentals, Automation & Programmability). Do NOT use out-of-scope topics such as NETCONF, RESTCONF, YANG, gNMI, deep Python scripting, or CCNP/DevNet-level material. For Automation, stay at CCNA level: SDN/controller concepts, northbound/southbound APIs, REST API characteristics (CRUD/HTTP verbs/data encoding), JSON, and config management tools (Ansible/Puppet/Chef).";
   const user=`Create ONE realistic CCNA 200-301 hands-on LAB task on: ${labTopic()}. Match real exam difficulty with several specific requirements (exact interfaces, IPs, subnet masks, VLAN IDs, etc.). Provide an ASCII topology diagram (routers/switches/PCs with interface labels) and an addressing table as plain text. Requirements must be in English. Return ONLY JSON: {"title":"<short English title>","scenario":"<1-2 sentence English context>","topology":"<ASCII topology and addressing table as plain text>","requirements":["<English requirement 1>","<English requirement 2>","..."],"device":"<device to configure, e.g. R1>"}`;
   try{
     const raw=await callClaude(sys,user,1600);
@@ -1059,13 +1063,20 @@ async function gradeStep(){
   const cfg=[(document.getElementById('cliInput').value||'').trim(),(window._termCmds||[]).join('\n')].filter(Boolean).join('\n');
   if(!cfg){alert('터미널에 명령을 입력하거나 설정을 붙여넣으세요.');return;}
   const res=document.getElementById('cliResult');res.className='explain show';res.innerHTML='<p class="msg ai think">이 단계 채점 중…</p>';
-  const sys="You are a fair Cisco CCNA lab grader checking ONE requirement only. Accept equivalent valid syntax and interface abbreviations. Output ONLY a JSON object with Korean text. Do not use emojis.";
+  const sys="You are a fair Cisco IOS engine and CCNA lab grader checking ONE requirement only. APPLY the commands in order honoring configuration MODES (enable # before configure terminal; global-config commands only in (config)#; interface subcommands only after entering interface config; router subcommands only in (config-router)#). Commands entered in the wrong mode or invalid/incomplete commands do NOT take effect. Judge the requirement by the RESULTING running-config and operational state (as show commands would reveal), NOT by mere text presence. If it fails due to a wrong mode or a missing mode step, say so specifically. Accept equivalent valid syntax and interface abbreviations. Output ONLY a JSON object with Korean text. Do not use emojis.";
   const user='LAB topology:\n'+currentLab.topology+'\nDevice: '+(currentLab.device||'')+'\n\nREQUIREMENT to check: '+reqs[step]+'\n\nLEARNER CONFIG so far:\n'+cfg+'\n\nDoes the configuration satisfy THIS requirement? Return ONLY JSON: {"ok":<true or false>,"note":"<Korean: 무엇이 맞는지, 또는 무엇이 부족/틀렸는지 구체적으로>"}';
   try{
-    const raw=await callClaude(sys,user,600);
+    const raw=await callClaude(sys,user,900);
     const jm=raw.match(/\{[\s\S]*\}/);if(!jm)throw new Error('채점 형식 오류');
-    const r=JSON.parse(jm[0]);
-    if(r.ok){
+    let r;
+    try{r=JSON.parse(jm[0]);}
+    catch(pe){
+      const okm=raw.match(/"ok"\s*:\s*(true|false)/i);
+      const nm=raw.match(/"note"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+      if(!okm)throw pe;
+      r={ok:okm[1].toLowerCase()==='true',note:nm?nm[1].replace(/\\"/g,'"').replace(/\\n/g,' '):''};
+    }
+    if(r.ok===true||r.ok==='true'){
       currentLab._step=step+1;
       const done=(step+1)>=reqs.length;
       res.innerHTML='<div style="color:var(--accent2);font-weight:700">[O] 통과! '+escapeHtml(reqs[step])+'</div><div style="color:var(--muted);font-size:14px;margin-top:4px">'+escapeHtml(r.note||'')+'</div><div style="margin-top:8px;font-weight:700">'+(done?'모든 요구사항 완료!':'다음 요구사항으로 진행합니다.')+'</div>';
@@ -1074,19 +1085,27 @@ async function gradeStep(){
       window._labFailed=[reqs[step]];window._labCfg=cfg;
       res.innerHTML='<div style="color:var(--bad);font-weight:700">[X] 아직 미완: '+escapeHtml(reqs[step])+'</div><div style="font-size:14px;margin-top:4px">'+escapeHtml(r.note||'')+'</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn green" style="font-size:13px;padding:6px 12px" onclick="askTutorLabFix()">튜터로 교정</button><button class="btn sec" style="font-size:13px;padding:6px 12px" onclick="labHint()">힌트</button></div>';
     }
-  }catch(e){res.innerHTML='[오류] '+escapeHtml(e.message);}
+  }catch(e){res.innerHTML='<div class="explain show">[오류] '+escapeHtml(e.message)+'<br><button class="btn sec" style="margin-top:6px" onclick="gradeStep()">다시 채점</button></div>';}
 }
 async function gradeLab(){
   if(!currentLab){alert('먼저 "새 랩 생성"을 누르세요.');return;}
   const cfg=[(document.getElementById('cliInput').value||'').trim(),(window._termCmds||[]).join('\n')].filter(Boolean).join('\n');
   if(!cfg){alert('설정 명령어를 입력하세요.');return;}
   const res=document.getElementById('cliResult');res.className='explain show';res.innerHTML='<p class="msg ai think">AI가 설정을 검증하는 중…</p>';
-  const sys="You are a strict but fair Cisco CCNA lab grader. Given a lab's requirements and the learner's IOS configuration, check each requirement. Accept equivalent valid syntax and interface abbreviations (e.g. int g0/0). Output ONLY a JSON object. All text fields in Korean. Do not use emojis.";
-  const user=`LAB\nTitle: ${currentLab.title}\nTopology:\n${currentLab.topology}\nRequirements: ${JSON.stringify(currentLab.requirements)}\nDevice: ${currentLab.device||''}\n\nLEARNER CONFIG:\n${cfg}\n\nGrade strictly per requirement. Return ONLY JSON: {"score":<0-100 integer>,"checks":[{"ok":<true or false>,"req":"<the requirement in Korean>","note":"<Korean: correct, or exactly what is wrong/missing>"}],"summary":"<Korean overall feedback and next step>"}`;
+  const sys="You are a strict but fair Cisco IOS engine and CCNA lab grader. Treat the learner input as a sequence of commands typed in order. APPLY them on a real device honoring configuration MODES and the command hierarchy: you must reach enable (#) before configure terminal; global-config commands (e.g. ip route, router ospf, vlan, access-list) only work in (config)#; interface subcommands (ip address, no shutdown, switchport...) only work after entering interface config; router subcommands (network, router-id) only in (config-router)#. A command entered in the WRONG mode, or an invalid/incomplete command, does NOT take effect. After applying, judge each requirement by the RESULTING running configuration and operational state (what show running-config / show ip route / show ip ospf neighbor would reveal), NOT by mere presence of command text. If a requirement fails because a command was in the wrong mode or a mode step (enable/configure terminal/interface) is missing, state that specifically in the note. Accept equivalent valid syntax and interface abbreviations (e.g. int g0/0). Output ONLY a JSON object. All text fields in Korean. Do not use emojis.";
+  const user=`LAB\nTitle: ${currentLab.title}\nTopology:\n${currentLab.topology}\nRequirements: ${JSON.stringify(currentLab.requirements)}\nDevice: ${currentLab.device||''}\n\nLEARNER CONFIG:\n${cfg}\n\nGrade strictly per requirement. Keep each note to ONE short Korean sentence and keep summary short. Output compact JSON. Return ONLY JSON: {"score":<0-100 integer>,"checks":[{"ok":<true or false>,"req":"<the requirement in Korean, brief>","note":"<one short Korean sentence>"}],"summary":"<short Korean feedback>"}`;
   try{
-    const raw=await callClaude(sys,user,1600);
+    const raw=await callClaude(sys,user,3500);
     const jm=raw.match(/\{[\s\S]*\}/);if(!jm)throw new Error('채점 형식 오류. 다시 시도하세요.');
-    const r=JSON.parse(jm[0]);
+    let r;
+    try{r=JSON.parse(jm[0]);}
+    catch(pe){
+      const checks=[];const re=/\{\s*"ok"\s*:\s*(true|false)\s*,\s*"req"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"note"\s*:\s*"((?:[^"\\]|\\.)*)"/g;let mm;
+      while((mm=re.exec(raw)))checks.push({ok:mm[1]==='true',req:mm[2].replace(/\\"/g,'"'),note:mm[3].replace(/\\"/g,'"')});
+      if(!checks.length)throw pe;
+      const scm=(raw.match(/"score"\s*:\s*(\d{1,3})/)||[])[1];
+      r={score:scm?+scm:Math.round(checks.filter(c=>c.ok).length/checks.length*100),checks:checks,summary:'응답이 일부 잘려 복구했습니다. 정확한 결과는 "다시 채점"을 눌러 확인하세요.'};
+    }
     const score=Math.max(0,Math.min(100,Math.round(Number(r.score)||0)));
     const col=score>=85?'var(--accent2)':(score>=50?'var(--warn)':'var(--bad)');
     let html='<div style="font-weight:700;font-size:16px">랩 점수: '+score+'%</div><div class="progressbar"><div style="width:'+score+'%;background:'+col+'"></div></div>';
@@ -1255,7 +1274,74 @@ const VOCAB=[
  {en:"Hypervisor",ko:"하이퍼바이저 (VM에 자원 분배)"},
  {en:"Quarantine",ko:"격리하다 (감염 장비 분리)"},
 ];
-let vpool=[],vi=0;
+const COMMANDS=[
+ {en:"enable",ko:"특권 EXEC 모드로 진입",note:"Router> → Router#"},
+ {en:"configure terminal",ko:"전역 설정 모드 진입",note:"Router# → (config)#  (conf t)"},
+ {en:"hostname R1",ko:"장비 이름 설정",note:"(config)#"},
+ {en:"exit",ko:"한 단계 상위 모드로",note:"모든 모드"},
+ {en:"end",ko:"바로 특권 모드로 (Ctrl+Z)",note:"설정 모드에서"},
+ {en:"do <command>",ko:"설정 모드에서 EXEC 명령 실행",note:"예: do show ip route"},
+ {en:"copy running-config startup-config",ko:"현재 설정을 NVRAM에 저장",note:"= write / wr"},
+ {en:"show running-config",ko:"현재 실행 설정 보기(적용 확인)",note:"verify"},
+ {en:"show version",ko:"IOS 버전·하드웨어 정보",note:""},
+ {en:"reload",ko:"장비 재부팅",note:""},
+ {en:"interface gi0/0",ko:"인터페이스 설정 모드 진입",note:"(config)# → (config-if)#"},
+ {en:"ip address 10.0.0.1 255.255.255.0",ko:"인터페이스 IPv4 주소 지정",note:"(config-if)#"},
+ {en:"no shutdown",ko:"인터페이스 활성화(켜기)",note:"(config-if)#  기본은 shutdown"},
+ {en:"shutdown",ko:"인터페이스 비활성화",note:"(config-if)#"},
+ {en:"description LINK-TO-R2",ko:"인터페이스 설명 달기",note:"(config-if)#"},
+ {en:"interface vlan 1",ko:"SVI(스위치 관리/L3) 인터페이스",note:""},
+ {en:"switchport mode access",ko:"포트를 access 모드로",note:"(config-if)#"},
+ {en:"switchport access vlan 10",ko:"access 포트를 VLAN 10에 할당",note:"(config-if)#"},
+ {en:"switchport mode trunk",ko:"포트를 트렁크 모드로",note:"(config-if)#"},
+ {en:"switchport trunk native vlan 99",ko:"트렁크 native VLAN 지정",note:"(config-if)#"},
+ {en:"switchport trunk allowed vlan 10,20",ko:"트렁크 허용 VLAN 지정",note:"(config-if)#"},
+ {en:"channel-group 1 mode active",ko:"LACP EtherChannel 구성",note:"active/passive=LACP"},
+ {en:"vlan 10",ko:"VLAN 생성 및 설정 진입",note:"(config)# → (config-vlan)#"},
+ {en:"name SALES",ko:"VLAN 이름 지정",note:"(config-vlan)#"},
+ {en:"show vlan brief",ko:"VLAN 목록·포트 할당 확인",note:""},
+ {en:"show interfaces trunk",ko:"트렁크 포트·native·허용 VLAN 확인",note:""},
+ {en:"show mac address-table",ko:"스위치 MAC 학습 테이블",note:""},
+ {en:"spanning-tree portfast",ko:"단말 포트 즉시 forwarding",note:"(config-if)# access 포트"},
+ {en:"spanning-tree bpduguard enable",ko:"BPDU 수신 시 err-disable",note:"(config-if)#"},
+ {en:"ip route 0.0.0.0 0.0.0.0 10.0.0.2",ko:"기본 경로(default route) 설정",note:"(config)#  전역 모드!"},
+ {en:"ip route 192.168.2.0 255.255.255.0 10.0.0.2",ko:"정적 경로 설정",note:"(config)#"},
+ {en:"router ospf 1",ko:"OSPF 프로세스 시작",note:"(config)# → (config-router)#"},
+ {en:"network 10.0.0.0 0.0.0.255 area 0",ko:"OSPF에 네트워크 광고",note:"(config-router)# 와일드카드"},
+ {en:"router-id 1.1.1.1",ko:"OSPF Router ID 수동 지정",note:"(config-router)#"},
+ {en:"passive-interface gi0/0",ko:"해당 인터페이스 OSPF 광고 억제",note:"(config-router)#"},
+ {en:"show ip route",ko:"라우팅 테이블 확인",note:"C/S/O/D 코드"},
+ {en:"show ip ospf neighbor",ko:"OSPF 이웃 상태(FULL) 확인",note:"verify"},
+ {en:"show ip protocols",ko:"라우팅 프로토콜 요약",note:""},
+ {en:"show ip interface brief",ko:"인터페이스 IP·up/down 요약",note:"sh ip int br"},
+ {en:"ip helper-address 10.0.0.10",ko:"DHCP 요청을 타 서브넷 서버로 중계",note:"(config-if)#"},
+ {en:"ip nat inside / outside",ko:"NAT 내부/외부 인터페이스 지정",note:"(config-if)#"},
+ {en:"ip nat inside source list 1 interface gi0/1 overload",ko:"PAT(오버로드) 설정",note:"(config)#"},
+ {en:"show ip nat translations",ko:"NAT 변환 테이블 확인",note:"verify"},
+ {en:"ntp server 10.0.0.5",ko:"NTP 서버 지정(시간 동기화)",note:"(config)#"},
+ {en:"enable secret cisco",ko:"특권 비밀번호를 강한 해시로 저장",note:"(config)#"},
+ {en:"line vty 0 4",ko:"가상 터미널(원격) 라인 진입",note:"(config)# → (config-line)#"},
+ {en:"transport input ssh",ko:"원격 접속을 SSH만 허용",note:"(config-line)#"},
+ {en:"login local",ko:"로컬 사용자 계정으로 로그인",note:"(config-line)#"},
+ {en:"username admin secret cisco",ko:"로컬 사용자 계정 생성",note:"(config)#"},
+ {en:"ip domain-name lab.local",ko:"SSH 키 생성을 위한 도메인 이름",note:"(config)#"},
+ {en:"crypto key generate rsa",ko:"SSH용 RSA 키 생성",note:"1024비트+"},
+ {en:"switchport port-security",ko:"포트 보안 활성화",note:"(config-if)#"},
+ {en:"switchport port-security maximum 2",ko:"허용 MAC 최대 개수",note:"(config-if)#"},
+ {en:"switchport port-security violation restrict",ko:"위반 모드 지정",note:"protect/restrict/shutdown(기본)"},
+ {en:"switchport port-security mac-address sticky",ko:"학습 MAC을 sticky 저장",note:"(config-if)#"},
+ {en:"access-list 10 permit 192.168.1.0 0.0.0.255",ko:"표준 ACL 규칙(출발지만)",note:"(config)# 1~99"},
+ {en:"access-list 100 deny tcp any host 10.1.1.5 eq 23",ko:"확장 ACL 규칙(telnet 차단 예)",note:"(config)# 100~199"},
+ {en:"ip access-group 10 in",ko:"인터페이스에 ACL 적용",note:"(config-if)# in/out"},
+];
+let vpool=[],vi=0,vMode='word';
+function getCustomCmds(){try{return JSON.parse(localStorage.getItem('ccnaCmds')||'[]');}catch(e){return [];}}
+function setCustomCmds(a){localStorage.setItem('ccnaCmds',JSON.stringify(a));}
+function getAllCmds(){return COMMANDS.concat(getCustomCmds());}
+function curSet(){return vMode==='word'?getAllVocab():getAllCmds();}
+function addItemCurrent(en,ko,note){en=(en||'').trim();ko=(ko||'').trim();note=(note||'').trim();if(!en||!ko)return false;if(curSet().some(v=>v.en.toLowerCase()===en.toLowerCase()))return false;if(vMode==='word'){const cv=getCustomVocab();cv.push({en,ko,note,custom:true});setCustomVocab(cv);}else{const cc=getCustomCmds();cc.push({en,ko,note,custom:true});setCustomCmds(cc);}return true;}
+function updateVModeUI(){const wb=document.getElementById('vmWord'),cb=document.getElementById('vmCmd');if(wb&&cb){wb.className='btn'+(vMode==='word'?'':' sec');cb.className='btn'+(vMode==='cmd'?'':' sec');}const en=document.getElementById('nvEn'),ko=document.getElementById('nvKo'),note=document.getElementById('nvNote');if(en)en.placeholder=vMode==='word'?'English':'명령어 (예: no shutdown)';if(ko)ko.placeholder=vMode==='word'?'한국어 뜻':'설명';if(note)note.placeholder=vMode==='word'?'비고(선택)':'모드/예시(선택)';}
+function setVMode(m){vMode=m;vi=0;vpool=curSet();updateVModeUI();renderCard();renderVocabList();}
 function getCustomVocab(){try{return JSON.parse(localStorage.getItem('ccnaVocab')||'[]');}catch(e){return [];}}
 function setCustomVocab(a){localStorage.setItem('ccnaVocab',JSON.stringify(a));}
 function getAllVocab(){return VOCAB.concat(getCustomVocab());}
@@ -1266,32 +1352,34 @@ function addVocab(en,ko,note){
   const cv=getCustomVocab();cv.push({en,ko,note,custom:true});setCustomVocab(cv);return true;
 }
 function delVocab(en){
-  setCustomVocab(getCustomVocab().filter(v=>v.en!==en));
-  vpool=getAllVocab();if(vi>=vpool.length)vi=0;renderVocabList();renderCard();
+  if(vMode==='word')setCustomVocab(getCustomVocab().filter(v=>v.en!==en));
+  else setCustomCmds(getCustomCmds().filter(v=>v.en!==en));
+  vpool=curSet();if(vi>=vpool.length)vi=0;renderVocabList();renderCard();
 }
 function addVocabManual(){
   const en=document.getElementById('nvEn').value,ko=document.getElementById('nvKo').value,note=document.getElementById('nvNote').value;
   if(!en.trim()||!ko.trim()){alert('영어 단어와 한국어 뜻을 모두 입력하세요.');return;}
-  if(!addVocab(en,ko,note)){alert('이미 있는 단어이거나 추가할 수 없습니다.');return;}
+  if(!addItemCurrent(en,ko,note)){alert('이미 있거나 추가할 수 없습니다.');return;}
   document.getElementById('nvEn').value='';document.getElementById('nvKo').value='';document.getElementById('nvNote').value='';
-  vpool=getAllVocab();renderVocabList();
+  vpool=curSet();renderVocabList();
 }
-function initVocab(){vpool=getAllVocab();if(vi>=vpool.length)vi=0;renderCard();renderVocabList();}
+function initVocab(){vpool=curSet();if(vi>=vpool.length)vi=0;updateVModeUI();renderCard();renderVocabList();}
 function renderCard(){
-  const c=vpool[vi];
+  if(!vpool.length)vpool=curSet();
+  const c=vpool[vi]||vpool[0];if(!c)return;
   document.getElementById('flash').classList.remove('flip');
-  document.getElementById('fEn').textContent=c.en;
+  const fEn=document.getElementById('fEn');fEn.textContent=c.en;fEn.style.fontSize=vMode==='cmd'?'18px':'26px';fEn.style.fontFamily=vMode==='cmd'?'Consolas,monospace':'inherit';
   document.getElementById('fKo').textContent=c.ko;
   document.getElementById('fNote').textContent=c.note||'';
   document.getElementById('vIdx').textContent=`${vi+1} / ${vpool.length}`;
 }
 function nextCard(){vi=(vi+1)%vpool.length;renderCard();}
 function prevCard(){vi=(vi-1+vpool.length)%vpool.length;renderCard();}
-function shuffleVocab(){vpool=shuffle(getAllVocab());vi=0;renderCard();}
+function shuffleVocab(){vpool=shuffle(curSet());vi=0;renderCard();}
 function renderVocabList(){
   const q=(document.getElementById('vSearch').value||'').toLowerCase();
   const list=document.getElementById('vocabList');list.innerHTML='';
-  getAllVocab().filter(v=>v.en.toLowerCase().includes(q)||v.ko.includes(q)).forEach(v=>{
+  curSet().filter(v=>v.en.toLowerCase().includes(q)||(v.ko||'').toLowerCase().includes(q)).forEach(v=>{
     const r=document.createElement('div');r.className='vocab-row';
     const tag=v.custom?' <span style="font-size:11px;color:var(--accent2)">[내 단어]</span>':'';
     const del=v.custom?`<button class="btn sec" style="font-size:12px;padding:2px 8px;margin-left:8px" onclick="delVocab('${v.en.replace(/'/g,"\\'")}')">삭제</button>`:'';
