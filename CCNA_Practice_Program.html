@@ -124,6 +124,7 @@
   <button data-v="report">리포트</button>
   <button data-v="tutor">AI 튜터</button>
   <button data-v="explain">설명훈련</button>
+  <button data-v="cram">설명보기</button>
 </nav>
 <main>
 
@@ -391,7 +392,7 @@
 <!-- EXPLAIN (Feynman) -->
 <section id="explain" class="view">
   <div class="card">
-    <h2>설명 훈련 (파인만 기법)</h2>
+    <h2>설명 훈련 (파인만: 내가 설명 → AI 채점)</h2>
     <p style="color:var(--muted);font-size:13px">AI가 개념을 물어보면, 당신이 직접 설명하세요. AI가 정확도를 채점해 목표 이상이면 "성공!"으로 넘어갑니다. (AI 튜터 탭의 API 키를 함께 사용합니다.)</p>
     <div class="meta">
       <span>목표 정확도:
@@ -403,9 +404,32 @@
       <button class="btn" onclick="newExplainQuestion()">새 문제 받기</button>
     </div>
     <div id="exStats"></div>
+    <details style="margin-top:10px">
+      <summary style="cursor:pointer;color:var(--accent);font-weight:600">직접 주제·자료로 훈련하기</summary>
+      <div style="margin-top:8px">
+        <input class="search" id="exCustTopic" placeholder="주제 (예: OSPF DR/BDR 선출)">
+        <textarea id="exCustMaterial" rows="5" placeholder="(선택) AI에게 들은 설명이나 학습 자료를 붙여넣으세요 — 이 내용으로 파인만 훈련을 합니다"></textarea>
+        <button class="btn" onclick="startExplainCustomFromInput()">이 내용으로 훈련 시작</button>
+      </div>
+    </details>
   </div>
   <div class="card">
     <div id="exArea"></div>
+  </div>
+</section>
+
+<!-- CRAM -->
+<section id="cram" class="view">
+  <div class="card">
+    <h2>설명 보기 (시험 벼락치기)</h2>
+    <p style="color:var(--muted);font-size:13px"><b>AI가 대신 설명해주는 모드</b>입니다(시험장에서 30초 안에 맞히는 법 중심). 여기서 이해한 뒤 → "설명훈련" 탭에서 직접 설명해 굳히세요. 주제를 고르고 "설명 생성" 또는 "랜덤 주제". (AI 튜터 키 사용)</p>
+    <div class="meta">
+      <span>주제: <select id="cramSel"></select></span>
+      <button class="btn" onclick="runCram()">설명 생성</button>
+      <button class="btn sec" onclick="randomCram()">랜덤 주제</button>
+    </div>
+    <input class="search" id="cramCustom" placeholder="직접 주제 입력 (위에서 '직접 입력' 선택 시)" style="display:none">
+    <div id="cramOut"></div>
   </div>
 </section>
 
@@ -720,6 +744,7 @@ document.querySelectorAll('nav button').forEach(b=>{
     if(b.dataset.v==='report') renderReport();
     if(b.dataset.v==='tutor') initTutor();
     if(b.dataset.v==='explain') initExplain();
+    if(b.dataset.v==='cram') initCram();
   };
 });
 
@@ -735,11 +760,16 @@ function renderHome(){
   document.getElementById('h-rate').textContent=s.total?Math.round(s.correct/s.total*100)+'%':'-';
   document.getElementById('h-streak').textContent=s.streak;
 }
-function resetStats(){if(confirm('모든 기록(정답률·도메인별·오답노트)을 초기화할까요?')){localStorage.removeItem('ccnaDomain');localStorage.removeItem('ccnaWrong');setStats({total:0,correct:0,streak:0});}}
+function resetStats(){if(confirm('모든 기록(정답률·도메인별·오답노트)을 초기화할까요?')){localStorage.removeItem('ccnaDomain');localStorage.removeItem('ccnaWrong');localStorage.removeItem('ccnaMiss');setStats({total:0,correct:0,streak:0});}}
 function getDom(){return JSON.parse(localStorage.getItem('ccnaDomain')||'{}');}
 function setDom(d){localStorage.setItem('ccnaDomain',JSON.stringify(d));}
 function getWrong(){return JSON.parse(localStorage.getItem('ccnaWrong')||'[]');}
 function setWrong(w){localStorage.setItem('ccnaWrong',JSON.stringify(w));}
+function getMiss(){try{return JSON.parse(localStorage.getItem('ccnaMiss')||'{}');}catch(e){return {};}}
+function setMiss(m){localStorage.setItem('ccnaMiss',JSON.stringify(m));}
+function keyOfQ(q){return q.ai?('A:'+q.q):('F:'+q.id);}
+function keyOfEntry(e){return (typeof e==='number')?('F:'+e):('A:'+e.q);}
+function bumpMiss(q){const m=getMiss();const k=keyOfQ(q);m[k]=(m[k]||0)+1;setMiss(m);}
 let reviewMode=false;
 
 /* ============== REPORT + 오답노트 ============== */
@@ -775,13 +805,16 @@ function renderWrong(){
   document.getElementById('wrongCount').textContent=`${w.length}문항`;
   const list=document.getElementById('wrongList');
   if(w.length===0){list.innerHTML='<p style="color:var(--muted)">오답이 없습니다. 퀴즈에서 틀린 문제가 자동으로 모입니다.</p>';return;}
-  list.innerHTML=w.map((e,i)=>{
+  const miss=getMiss();
+  const items=w.map((e,i)=>({e,i,m:miss[keyOfEntry(e)]||0})).sort((a,b)=>b.m-a.m);
+  list.innerHTML=items.map(({e,i,m})=>{
     const q=resolveWrong(e);if(!q)return '';
     const ans=Array.isArray(q.a)?q.a.map(j=>q.o[j]).join(', '):q.o[q.a];
     const exh=q.ex?`<pre class="exhibit" style="font-size:12px">${escapeHtml(q.ex)}</pre>`:'';
     const tag=q.ai?' <span style="font-size:11px;color:var(--accent)">[AI]</span>':'';
+    const mtag=m>=1?` <span style="font-size:11px;color:var(--bad)">${m}회 틀림</span>`:'';
     return `<div style="border-bottom:1px solid var(--line);padding:12px 0">
-      ${exh}<div style="font-weight:600">${escapeHtml(q.q)}${tag}</div>
+      ${exh}<div style="font-weight:600">${escapeHtml(q.q)}${tag}${mtag}</div>
       <div style="font-size:13px;color:var(--muted);margin:3px 0">해석: ${escapeHtml(q.t||'')}</div>
       <div style="font-size:14px"><b style="color:var(--accent2)">정답:</b> ${escapeHtml(ans)}</div>
       <div style="font-size:13px;color:var(--muted)">설명: ${q.e||''}</div>
@@ -791,10 +824,23 @@ function renderWrong(){
 function delWrongAt(i){const w=getWrong();w.splice(i,1);setWrong(w);renderReport();}
 function startExplainWrong(i){const q=resolveWrong(getWrong()[i]);if(q)startExplainQ(q);}
 function explainOpening(q){
+  if(q.custom){
+    let s='아래 주제·자료를 바탕으로, 핵심을 본인 말로 설명해보세요. 잘 모르겠으면 아래 "먼저 설명 듣기"를 누르세요.\n\n';
+    s+='**주제:** '+(q.q||'')+'\n';
+    if(q.material)s+='\n**자료:**\n'+q.material;
+    return s;
+  }
   let s='이 문제의 정답을 고르고, 왜 그게 맞는지 본인 말로 설명해보세요. 잘 모르겠으면 아래 "먼저 설명 듣기"를 누르세요.\n\n';
   if(q.ex)s+='```\n'+q.ex+'\n```\n\n';
-  s+='**Q.** '+q.q+'\n'+q.o.map((t,i)=>String.fromCharCode(65+i)+'. '+t).join('\n')+'\n\n(해석: '+(q.t||'')+')';
+  s+='**Q.** '+q.q+'\n'+(q.o||[]).map((t,i)=>String.fromCharCode(65+i)+'. '+t).join('\n')+'\n\n(해석: '+(q.t||'')+')';
   return s;
+}
+function startExplainCustomFromInput(){
+  if(!localStorage.getItem('ccnaApiKey')){alert('먼저 AI 튜터 탭에서 API 키를 저장하세요.');return;}
+  const topic=(document.getElementById('exCustTopic').value||'').trim();
+  const material=(document.getElementById('exCustMaterial').value||'').trim();
+  if(!topic&&!material){alert('주제나 자료 중 하나는 입력하세요.');return;}
+  startExplainQ({custom:true,q:topic||'입력한 자료의 핵심 개념',material:material,e:material,t:'',o:null,a:0,d:'custom'});
 }
 function startExplainWith(id){startExplainQ(QUESTIONS[id]);}
 function startExplainQ(q){
@@ -805,13 +851,13 @@ function startExplainQ(q){
   renderExStats();
   curExplain=q;exHist=[];window._exBusy=false;
   exHist.push({role:'assistant',content:explainOpening(q)});
-  document.getElementById('exArea').innerHTML=`<div id="exChat"></div><div id="exScore"></div><div id="exControls" style="margin-top:10px"><div style="display:flex;gap:8px"><textarea id="exInput" rows="3" placeholder="설명을 작성하고 Enter (또는 보내기)…" style="flex:1;margin:0"></textarea><button class="btn green" onclick="sendExplainTurn()">보내기</button></div><div style="margin-top:8px"><button class="btn sec" style="font-size:13px;padding:6px 12px" onclick="teachExplain()">먼저 설명 듣기 (모를 때)</button></div></div>`;
+  document.getElementById('exArea').innerHTML=`<div id="exChat"></div><div id="exScore"></div><div id="exControls" style="margin-top:10px"><div style="display:flex;gap:8px"><textarea id="exInput" rows="3" placeholder="설명을 작성하고 Enter (또는 보내기)…" style="flex:1;margin:0"></textarea><button class="btn green" onclick="sendExplainTurn()">보내기</button></div><div style="margin-top:8px"><button class="btn sec" style="font-size:13px;padding:6px 12px" onclick="teachExplain()">모를 때 설명 보기</button></div></div>`;
   renderExChat();
   const inp=document.getElementById('exInput');if(inp){inp.focus();inp.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendExplainTurn();}};}
 }
 function clearWrong(){if(confirm('오답노트를 비울까요?')){setWrong([]);renderReport();}}
 function startReview(){
-  const pool=getWrong().map(resolveWrong).filter(Boolean);
+  const miss=getMiss();const pool=getWrong().map(resolveWrong).filter(Boolean).sort((a,b)=>(miss[keyOfQ(b)]||0)-(miss[keyOfQ(a)]||0));
   if(pool.length===0){alert('오답노트가 비어 있습니다. 먼저 퀴즈를 풀어보세요.');return;}
   reviewMode=true;quizPool=shuffle(pool);qi=0;
   document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));
@@ -963,7 +1009,7 @@ function finishQ(correct,q){
   const dom=getDom();if(!dom[q.d])dom[q.d]={t:0,c:0};dom[q.d].t++;if(correct)dom[q.d].c++;setDom(dom);
   let w=getWrong();
   if(correct){if(reviewMode){w=w.filter(e=>!sameWrong(e,q));setWrong(w);}}
-  else{if(!w.some(e=>sameWrong(e,q))){w.push(q.ai?{d:q.d,q:q.q,o:q.o,a:q.a,e:q.e,t:q.t,ex:q.ex,ai:true}:q.id);setWrong(w);}}
+  else{bumpMiss(q);if(!w.some(e=>sameWrong(e,q))){w.push(q.ai?{d:q.d,q:q.q,o:q.o,a:q.a,e:q.e,t:q.t,ex:q.ex,ai:true}:q.id);setWrong(w);}}
 }
 function sameWrong(e,q){return (typeof e==='number')?(!q.ai&&e===q.id):(e&&e.q===q.q);}
 function resolveWrong(e){return (typeof e==='number')?QUESTIONS[e]:e;}
@@ -1593,7 +1639,7 @@ function renderVocabList(){
 
 /* ============== AI 튜터 (Anthropic Claude) ============== */
 let tutorHist=[];
-const TUTOR_SYS="You are a friendly, encouraging CCNA 200-301 tutor. The learner is Korean, studying for the exam in English but more comfortable in Korean. Always answer in Korean, but keep technical and exam terms in English (e.g., OSPF, administrative distance, trunk). Be concise and clear, and use simple examples. When asked about a specific multiple-choice question, explain why the correct option is right and briefly why each other option is wrong. Do not use emojis in your replies. If the user asks you to add a word or term to their vocabulary list (단어장/단어장에 추가), include each term on its own line in EXACTLY this format: [[VOCAB] <English term> :: <Korean meaning> :: <short note or leave empty>]] — the app detects these lines and adds them to the vocabulary automatically. Be technically accurate: Cisco IOS configuration is DECLARATIVE, so the order of most commands does not change the final running-config. Never claim a strict required ordering unless there is a real dependency (e.g., an interface must exist before applying an ACL to it, or RSA keys must exist before SSH). When teaching configuration, recommend this sensible workflow and explain the dependencies: global settings -> interface addressing (no shutdown) -> static/default routes -> dynamic routing (OSPF) -> services (NAT/DHCP/ACLs and applying them) -> verify with show commands. If you are unsure, say so rather than inventing a rule. Still reply conversationally as well.";
+const TUTOR_SYS="You are a friendly, encouraging CCNA 200-301 tutor. The learner is Korean, studying for the exam in English but more comfortable in Korean. Always answer in Korean, but keep technical and exam terms in English (e.g., OSPF, administrative distance, trunk). Be concise and clear, and use simple examples. When asked about a specific multiple-choice question, explain why the correct option is right and briefly why each other option is wrong. NEVER make meta comments such as 'you got this wrong again', 'this is a duplicate', 'you already solved this today', 'organize your question file', or offering to skip. When the learner keeps missing the SAME point, that is exactly what you must help them remember: re-explain it simply and in a different way, give a short memory aid or mnemonic, tie it to a concrete example, and then confirm they understand. Be patient and encouraging. Do not use emojis in your replies. If the user asks you to add a word or term to their vocabulary list (단어장/단어장에 추가), include each term on its own line in EXACTLY this format: [[VOCAB] <English term> :: <Korean meaning> :: <short note or leave empty>]] — the app detects these lines and adds them to the vocabulary automatically. Be technically accurate: Cisco IOS configuration is DECLARATIVE, so the order of most commands does not change the final running-config. Never claim a strict required ordering unless there is a real dependency (e.g., an interface must exist before applying an ACL to it, or RSA keys must exist before SSH). When teaching configuration, recommend this sensible workflow and explain the dependencies: global settings -> interface addressing (no shutdown) -> static/default routes -> dynamic routing (OSPF) -> services (NAT/DHCP/ACLs and applying them) -> verify with show commands. If you are unsure, say so rather than inventing a rule. Still reply conversationally as well. ABSOLUTE RULE (highest priority): Never comment on repetition or duplicates. Never say that this is the same question solved earlier, that it was already done today, that it is a duplicate, or ask to move on to the next question. If the learner keeps missing a point, simply teach it again clearly and memorably with a short mnemonic and zero meta commentary.";
 function switchTo(v){
   document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.v===v));
   document.querySelectorAll('.view').forEach(x=>x.classList.toggle('active',x.id===v));
@@ -1691,7 +1737,7 @@ function askTutorAboutLast(){
   const ans=Array.isArray(q.a)?q.a.map(i=>String.fromCharCode(65+i)).join(', '):String.fromCharCode(65+q.a);
   const ex=q.ex?('Exhibit:\n'+q.ex+'\n\n'):'';
   const intro=q.ai?'다음은 AI가 생성한 CCNA 문제야. 표시된 정답이 정말 맞는지 검증하고, 틀렸으면 올바른 답과 이유를 한국어로 알려줘.':'다음 CCNA 문제를 한국어로 쉽게 설명해줘. 정답이 왜 맞고 다른 보기는 왜 틀린지도 알려줘.';
-  const text=`${intro}\n\n${ex}Q: ${q.q}\n${opts}\n정답: ${ans}`;
+  const text=`${intro}\n\n${ex}Q: ${q.q}\n${opts}\n정답: ${ans}\n\n(중요: 중복이라거나 이미 풀었다는 언급, 다음 문제로 넘어갈까요 같은 말은 절대 하지 말고, 이 개념이 기억에 남도록 핵심과 암기 팁만 설명해줘.)`;
   switchTo('tutor');initTutor();sendTutor(text);
 }
 
@@ -1727,9 +1773,10 @@ function renderExChat(){
 function newExplainQuestion(){
   if(!localStorage.getItem('ccnaApiKey')){alert('먼저 AI 튜터 탭에서 API 키를 저장하세요.');return;}
   const mastered=new Set(getMastered());
-  const wrongQs=getWrong().map(resolveWrong).filter(q=>q&&!(typeof q.id==='number'&&mastered.has(q.id)));
+  const miss=getMiss();
+  const wrongQs=getWrong().map(resolveWrong).filter(q=>q&&!(typeof q.id==='number'&&mastered.has(q.id))).sort((a,b)=>(miss[keyOfQ(b)]||0)-(miss[keyOfQ(a)]||0));
   let q;
-  if(wrongQs.length){q=wrongQs[Math.random()*wrongQs.length|0];}
+  if(wrongQs.length){q=wrongQs[Math.min(Math.random()*3|0,wrongQs.length-1)];}
   else{const ids=QUESTIONS.map(x=>x.id).filter(id=>!mastered.has(id));q=ids.length?QUESTIONS[ids[Math.random()*ids.length|0]]:QUESTIONS[Math.random()*QUESTIONS.length|0];}
   curExplain=q;exHist=[];window._exBusy=false;
   exHist.push({role:'assistant',content:explainOpening(curExplain)});
@@ -1741,7 +1788,7 @@ function newExplainQuestion(){
          <textarea id="exInput" rows="3" placeholder="설명을 작성하고 Enter (또는 보내기)…" style="flex:1;margin:0"></textarea>
          <button class="btn green" onclick="sendExplainTurn()">보내기</button>
        </div>
-       <div style="margin-top:8px"><button class="btn sec" style="font-size:13px;padding:6px 12px" onclick="teachExplain()">먼저 설명 듣기 (모를 때)</button></div>
+       <div style="margin-top:8px"><button class="btn sec" style="font-size:13px;padding:6px 12px" onclick="teachExplain()">모를 때 설명 보기</button></div>
      </div>`;
   renderExChat();
   const inp=document.getElementById('exInput');inp.focus();
@@ -1749,7 +1796,7 @@ function newExplainQuestion(){
 }
 function teachExplain(){
   if(window._exBusy)return;
-  sendExplainTurn('아직 잘 몰라요. 먼저 이 개념의 핵심을 쉽게 가르쳐 주고, 그 다음에 제가 제 말로 설명해볼게요.');
+  sendExplainTurn('아직 잘 몰라요. 이 개념이 시험에서 어떻게 나오고 30초에 맞히는지 출제 포인트 → 정답/오답 이유 → 시험장에서 바로 찾는 법(config·토폴로지 보는 순서와 키워드) → 함정 → 암기법 순서로 알려주고, 마지막에 ★★★★★ 트리거 요약을 줘. 그다음에 내가 직접 설명해볼게.');
 }
 async function sendExplainTurn(preset){
   const key=(localStorage.getItem('ccnaApiKey')||'').trim();
@@ -1761,11 +1808,13 @@ async function sendExplainTurn(preset){
   exHist.push({role:'user',content:text});
   window._exBusy=true;renderExChat();
   const q=curExplain;
-  const opts=q.o.map((t,i)=>String.fromCharCode(65+i)+'. '+t).join(' / ');
-  const ans=Array.isArray(q.a)?q.a.map(i=>String.fromCharCode(65+i)).join(', '):String.fromCharCode(65+q.a);
-  const sys=`You are a warm, patient CCNA 200-301 tutor using the Feynman technique, chatting in Korean (keep technical/exam terms in English). The learner may be a beginner and can get frustrated, so be encouraging and never naggy. The learner can SEE the question and all options. ALWAYS first react to what the learner actually wrote: if they selected an option, state clearly whether that choice is correct or wrong and why; if their statement is wrong, off-topic, or unrelated to this question, point out specifically what is wrong before anything else. Keep your reply in plain Korean prose (no JSON, no raw braces). Only teach the whole concept first when the learner explicitly says they do not know or asks you to explain.
+  const opts=(q.o||[]).map((t,i)=>String.fromCharCode(65+i)+'. '+t).join(' / ');
+  const ans=q.o?(Array.isArray(q.a)?q.a.map(i=>String.fromCharCode(65+i)).join(', '):String.fromCharCode(65+q.a)):'';
+  const conceptBlock=q.custom?('Topic: '+q.q+'\nReference material the learner is studying (grade their explanation strictly against THIS material; if their explanation matches the material accurately in their own words, raise the score):\n'+(q.material||q.e||'')):('[Question] '+q.q+'\n[Options] '+opts+'\n[Correct answer] '+ans+'\n[Reference explanation] '+(q.e||''));
+  const drillNote=q.drill?"DRILL MODE: This is a memorization drill to lock in EVERY item in the material's ★★★★★ 시험장에서 기억할 것 list, one trigger at a time, in order, never skipping. Vary the format: sometimes a short CCNA exam-style question, sometimes a keyword or fill-in-the-blank recall (for example OSPF의 AD는? or Native VLAN 프레임 = ?). RULES: If the learner answer is CORRECT, briefly confirm, give the one-line trigger, then pose the NEXT uncovered trigger. If the answer is WRONG or only partly right, clearly say it is wrong, teach the correct trigger simply, and RE-ASK the SAME trigger (do NOT advance). For this drill, output ONLY a JSON object with two fields: reply (your Korean reply, which MUST end with the current or next question) and correct (true or false = whether the learner LAST answer was correct). Do NOT include a score field for the drill. ":"";
+  const sys=`You are a warm, patient CCNA 200-301 EXAM instructor using the Feynman technique, chatting in Korean (keep technical/exam terms in English). YOUR SINGLE GOAL is to make the learner able to FIND the correct answer within 30 seconds in the real Pearson VUE CCNA exam. Focus on exam triggers/keywords, what to look at FIRST in a config or topology, and the traps the exam writer hides. Never explain like a textbook. No real-world or operations talk. Cover ONLY what the CCNA exam needs. The learner may be a beginner and can get frustrated, so be encouraging and never naggy. NEVER make meta comments such as 'you got this wrong again', 'this is a duplicate', 'you already solved this today', 'organize your question file', or offering to skip. When the learner keeps missing the SAME point, that is exactly what you must help them remember: re-explain it simply and in a different way, give a short memory aid or mnemonic, tie it to a concrete example, and then confirm they understand. Be patient and encouraging. The learner can SEE the question and all options. ALWAYS first react to what the learner actually wrote: if they selected an option, state clearly whether that choice is correct or wrong and why; if their statement is wrong, off-topic, or unrelated to this question, point out specifically what is wrong before anything else. Keep your reply in plain Korean prose (no JSON, no raw braces). Only teach the whole concept first when the learner explicitly says they do not know or asks you to explain.
 TEACH FIRST when needed:
-- If the learner says they don't know, asks you to explain or teach, or seems stuck or frustrated, FIRST clearly TEACH the concept: give the correct answer and explain the key points simply with a short example, in Korean, as something to read and learn. THEN in ONE sentence gently invite them to explain it back in their own words. Do NOT give only tiny hints while repeatedly demanding an answer.
+- If the learner says they don't know, asks you to explain or teach, or seems stuck or frustrated, FIRST clearly TEACH the concept: give the correct answer and explain the key points simply with a short example, in Korean, as something to read and learn. When you teach, use this exam-cram structure in Korean: 출제 포인트 -> 왜 정답인지 / 왜 다른 보기가 틀린지 -> 시험장에서 바로 찾는 법 (config/토폴로지를 보는 순서와 찾을 키워드) -> 시험 함정 -> 암기법, and END the teaching with a "★★★★★ 시험장에서 기억할 것" trigger summary in arrow form (for example: Native VLAN -> Untagged). THEN in ONE sentence gently invite them to explain it back in their own words. Do NOT give only tiny hints while repeatedly demanding an answer.
 - Accept the learner's own words in Korean. Never force them to rephrase in different words or in English.
 - When the learner does explain, briefly affirm what is right, gently fill in what is missing, and ask at most ONE simple follow-up. Keep replies short. Do not use emojis.
 SCORING (score = the learner's OWN demonstrated understanding):
@@ -1773,13 +1822,12 @@ SCORING (score = the learner's OWN demonstrated understanding):
 - While you are teaching, or the learner is only reading/agreeing/saying they do not know, keep the score at or below 40.
 - Raise the score only as the learner articulates the idea themselves. A pass (>= ${exTarget}) requires the learner to state the key points themselves, accurately.
 After EACH learner message, output ONLY a JSON object and nothing else: {"reply":"<your Korean reply>","score":<integer 0-100 = the learner's own demonstrated understanding>}. When score >= ${exTarget}, congratulate, give a one-line summary, and do NOT ask another question.
+${drillNote}
 Concept being assessed:
-[Question] ${q.q}
-[Options] ${opts}
-[Correct answer] ${ans}
-[Reference explanation] ${q.e}
+${conceptBlock}
 TARGET=${exTarget}`;
-  const apiMsgs=exHist.slice(1).map(m=>({role:m.role,content:m.content}));
+  const apiMsgs=exHist.map(m=>({role:m.role,content:m.content}));
+  if(apiMsgs[0]&&apiMsgs[0].role==='assistant')apiMsgs.unshift({role:'user',content:'시작'});
   try{
     const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
       headers:{'x-api-key':key,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
@@ -1789,12 +1837,13 @@ TARGET=${exTarget}`;
     const rawtext=(data.content||[]).map(c=>c.text||'').join('');
     let reply=null,score=null;
     const jm=rawtext.match(/\{[\s\S]*\}/);
-    if(jm){try{const r=JSON.parse(jm[0]);reply=r.reply;score=Math.max(0,Math.min(100,Math.round(Number(r.score)||0)));}catch(e){}}
+    if(jm){try{const r=JSON.parse(jm[0]);reply=r.reply;if(q.drill){const ok=(r.correct===true||r.correct==='true');if(ok)curExplain.correctCount=Math.min((curExplain.correctCount||0)+1,curExplain.totalTriggers||99);score=curExplain.totalTriggers?Math.round((curExplain.correctCount||0)/curExplain.totalTriggers*100):(ok?100:0);}else{score=Math.max(0,Math.min(100,Math.round(Number(r.score)||0)));}}catch(e){}}
     if(reply==null){
       const rm=rawtext.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)"/);
       if(rm){reply=rm[1].replace(/\\n/g,'\n').replace(/\\"/g,'"').replace(/\\\\/g,'\\');}
       else{reply=rawtext.replace(/\{[\s\S]*\}/,'').trim()||rawtext;}
       const sm=rawtext.match(/"score"\s*:\s*(\d{1,3})/);if(sm)score=Math.max(0,Math.min(100,+sm[1]));
+      if(q.drill){const cm=rawtext.match(/"correct"\s*:\s*(true|false)/i);if(cm){const ok=cm[1].toLowerCase()==='true';if(ok)curExplain.correctCount=Math.min((curExplain.correctCount||0)+1,curExplain.totalTriggers||99);score=curExplain.totalTriggers?Math.round((curExplain.correctCount||0)/curExplain.totalTriggers*100):(ok?100:0);}}
     }
     window._exBusy=false;
     exHist.push({role:'assistant',content:reply||'(빈 응답)'});
@@ -1806,7 +1855,7 @@ TARGET=${exTarget}`;
       const sc=document.getElementById('exScore');sc.className='explain show';
       sc.innerHTML=`<div style="font-weight:700">현재 이해도: ${score}% / 목표 ${exTarget}%</div><div class="progressbar"><div style="width:${score}%;background:${col}"></div></div>`;
       if(pass){
-        const ms=getMastered();if(!ms.includes(q.id)){ms.push(q.id);setMastered(ms);}
+        if(typeof q.id==='number'){const ms=getMastered();if(!ms.includes(q.id)){ms.push(q.id);setMastered(ms);}}
         document.getElementById('exControls').innerHTML=`<div style="font-size:16px;font-weight:700;color:var(--accent2)">성공! 통과했습니다.</div><button class="btn green" onclick="newExplainQuestion()">다음 개념</button>`;
         renderExStats();
       }
@@ -1943,6 +1992,127 @@ function askTutorConcept(){
   const c=CONCEPTS[cIdx];
   switchTo('tutor');initTutor();
   sendTutor('CCNA 개념 "'+c.t+'"를 한국어로 쉽게, 예시를 들어 설명해줘. 시험에서 이 개념이 어떻게 응용되어 출제되는지도 알려줘.');
+}
+
+/* ============== 시험 벼락치기 (Cram) ============== */
+const CRAM_TOPICS=["IPv4 Subnetting","VLSM","Wildcard Mask","OSPF","Static Route","Floating Static Route","Administrative Distance","Longest Prefix Match","IPv6","IPv6 Static Route","DHCP","DHCP Relay","NAT/PAT","ACL","VLAN","Trunk","Native VLAN","DTP","EtherChannel","STP/RSTP","PortFast","BPDU Guard","Wireless","WLC","Controller-Based Network","SDN","Northbound/Southbound API","QoS","SNMP","Syslog","NTP","SSH vs Telnet","DNS","HSRP / FHRP","FHRP Priority","Route Summarization / Supernet","Host/Broadcast 계산","Binary 계산","Drag & Drop 문제","Lab / Config 읽기","Topology 읽기","show ip route 읽기","show interfaces trunk 읽기","show spanning-tree 읽기","show ip ospf neighbor 읽기","show ip nat translations 읽기","show ip interface brief 읽기","show mac address-table 읽기"];
+const CRAM_SYS="You are an instructor who ONLY teaches the Cisco CCNA 200-301 exam. Your goal is NOT broad theory; it is to make the learner find the correct answer within 30 seconds in the real Pearson VUE CCNA exam. Never explain like a textbook. Explain the way CCNA questions are ACTUALLY asked. Use the Feynman technique, answering in Korean (keep technical/exam terms in English). The learner is a beginner: keep explaining WHY and do not assume prior knowledge, but include ONLY what is needed for the CCNA exam. No real-world/operations talk. Stay STRICTLY within the official CCNA 200-301 blueprint (do NOT use NETCONF/RESTCONF/YANG or CCNP-level material). Use tables often. Do not repeat yourself; connect related concepts. Do not use emojis (the star character is allowed). ALWAYS answer in EXACTLY this structure, using these Korean headings in order: '① 출제 포인트' (how this is asked on the CCNA exam), '② 왜 이게 정답인지', '③ 왜 다른 보기들은 틀렸는지', '④ 시험장에서 바로 찾는 방법' (what to look at FIRST in the topology, the ORDER to read a config, how to find the keyword), '⑤ 암기법', '⑥ 시험 함정' (where the exam writer hides traps and why many people miss it), '⑦ 같이 나오는 개념', '⑧ 비슷한 문제가 나오면 어떻게 푸는지', '⑨ 마지막 한 줄 암기'. Then ALWAYS end with a section titled '★★★★★ 시험장에서 기억할 것' that summarizes the key triggers in arrow form (for example: 'Native VLAN -> Untagged Frame', 'OSPF -> AD 110', 'Floating Static -> AD > 1'). Keep everything tight and exam-focused.";
+function cramSelChange(){const c=document.getElementById('cramCustom');c.style.display=document.getElementById('cramSel').value==='__custom'?'block':'none';}
+function initCram(){
+  const sel=document.getElementById('cramSel');
+  if(sel.options.length===0){CRAM_TOPICS.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;sel.appendChild(o);});const c=document.createElement('option');c.value='__custom';c.textContent='직접 입력…';sel.appendChild(c);sel.onchange=cramSelChange;}
+  if(!localStorage.getItem('ccnaApiKey')&&!document.getElementById('cramOut').innerHTML){document.getElementById('cramOut').innerHTML='<p style="color:var(--warn);font-size:14px">먼저 "AI 튜터" 탭에서 API 키를 저장하세요.</p>';}
+}
+function randomCram(){
+  const sel=document.getElementById('cramSel');
+  const t=CRAM_TOPICS[Math.random()*CRAM_TOPICS.length|0];
+  sel.value=t;cramSelChange();runCram();
+}
+let drillState=null;
+function goCram(){switchTo('cram');}
+function parseTriggers(material){
+  const si=material.indexOf('★★★★★');
+  const sec=si>=0?material.slice(si):material;
+  const arr=[];
+  sec.split('\n').forEach(l=>{
+    l=l.replace(/`/g,'').replace(/\*\*/g,'').trim();
+    if(/시험장에서 기억할/.test(l))return;
+    const parts=l.split(/->|→/);
+    if(parts.length>=2){const left=parts[0].trim();const right=parts.slice(1).join(' → ').trim();if(left&&right&&left.length<60)arr.push({left,right});}
+  });
+  return arr;
+}
+function updateDrillScore(){
+  if(!drillState)return;
+  const total=drillState.triggers.length,done=drillState.mastered.length;
+  const score=total?Math.round(done/total*100):0;
+  const col=score>=85?'var(--accent2)':(score>=50?'var(--warn)':'var(--bad)');
+  const sc=document.getElementById('exScore');if(sc){sc.className='explain show';sc.innerHTML='<div style="font-weight:700">트리거 마스터: '+done+' / '+total+' ('+score+'%)</div><div class="progressbar"><div style="width:'+score+'%;background:'+col+'"></div></div>';}
+}
+async function nextDrillQuestion(){
+  if(!drillState)return;
+  if(drillState.remaining.length===0){
+    const notM=drillState.triggers.map((_,i)=>i).filter(i=>drillState.mastered.indexOf(i)<0);
+    if(notM.length===0){
+      exHist.push({role:'assistant',content:'전부 통과했습니다! ★★★★★ 트리거를 모두 맞혔어요.'});renderExChat();
+      const ctl=document.getElementById('exControls');if(ctl)ctl.innerHTML='<div style="font-size:16px;font-weight:700;color:var(--accent2)">완료! 모든 트리거 마스터.</div><button class="btn green" style="margin-top:6px" onclick="goCram()">설명보기로 돌아가기</button>';
+      return;
+    }
+    drillState.pass++;drillState.remaining=notM.slice();
+    exHist.push({role:'assistant',content:'이제 틀린 것만 다시! (남은 '+notM.length+'개 · '+drillState.pass+'회차)'});
+  }
+  drillState.cur=drillState.remaining.shift();
+  const t=drillState.triggers[drillState.cur];
+  if(!t.question){
+    window._exBusy=true;exHist.push({role:'assistant',content:'문제 준비 중…'});renderExChat();
+    try{
+      const sysQ="You turn ONE CCNA exam memorization fact into a single clear, self-contained Korean exam-style question whose answer is exactly the given fact. The question must be unambiguous with ONE clear expected answer, short, and answerable from memory. Do NOT reveal the answer in the question. Output ONLY the question text, nothing else.";
+      const uq='주제/키워드: '+t.left+'\n정답(핵심): '+t.right+'\n위 정답을 묻는 명확한 한 문장 CCNA 문제를 만들어줘. 답이 여러 개로 갈리지 않게.';
+      const g=(await callClaude(sysQ,uq,200)).trim();
+      t.question=g||('이것을 설명하세요: '+t.left);
+    }catch(e){t.question='이것을 설명하세요: '+t.left;}
+    exHist.pop();window._exBusy=false;
+  }
+  exHist.push({role:'assistant',content:t.question});
+  renderExChat();
+  const inp=document.getElementById('exInput');if(inp)inp.focus();
+}
+async function sendDrill(){
+  if(!drillState||window._exBusy)return;
+  const ta=document.getElementById('exInput');const ans=(ta?ta.value:'').trim();
+  if(!ans){alert('답을 입력하세요.');return;}
+  const key=(localStorage.getItem('ccnaApiKey')||'').trim();
+  if(!key){alert('AI 튜터 탭에서 API 키를 먼저 저장하세요.');return;}
+  ta.value='';exHist.push({role:'user',content:ans});window._exBusy=true;renderExChat();
+  const t=drillState.triggers[drillState.cur];
+  const sys="You grade a CCNA memorization answer LENIENTLY. The learner answered a question whose correct key fact is given. Mark correct if the learner's answer captures the KEY fact (accept synonyms, Korean or English, abbreviations, and partial answers that are essentially right). Output ONLY a JSON object: {\"correct\": true or false, \"feedback\": \"<one short Korean line clearly stating the correct answer>\"}.";
+  const user='질문: '+(t.question||(t.left+' → ?'))+'\n정답 핵심: '+t.left+' → '+t.right+'\n학습자 답: '+ans;
+  try{
+    const raw=await callClaude(sys,user,300);
+    const jm=raw.match(/\{[\s\S]*\}/);let correct=false,fb='';
+    if(jm){try{const r=JSON.parse(jm[0]);correct=(r.correct===true||r.correct==='true');fb=r.feedback||'';}catch(e){const cm=raw.match(/"correct"\s*:\s*(true|false)/i);correct=cm?cm[1].toLowerCase()==='true':false;}}
+    else{const cm=raw.match(/(true|false)/i);correct=cm?cm[1].toLowerCase()==='true':false;}
+    window._exBusy=false;
+    if(correct){if(drillState.mastered.indexOf(drillState.cur)<0)drillState.mastered.push(drillState.cur);exHist.push({role:'assistant',content:'[정답] '+(fb||(t.left+' → '+t.right))});}
+    else{const mi=drillState.mastered.indexOf(drillState.cur);if(mi>=0)drillState.mastered.splice(mi,1);exHist.push({role:'assistant',content:'[다시 볼 것] 정답: '+t.left+' → '+t.right+'. 나중에 다시 물어볼게요.'});}
+    renderExChat();updateDrillScore();await nextDrillQuestion();
+  }catch(e){window._exBusy=false;exHist.push({role:'assistant',content:'[오류] '+e.message});renderExChat();}
+}
+async function drillReveal(){
+  if(!drillState||window._exBusy)return;
+  const t=drillState.triggers[drillState.cur];if(!t)return;
+  const mi=drillState.mastered.indexOf(drillState.cur);if(mi>=0)drillState.mastered.splice(mi,1);
+  exHist.push({role:'assistant',content:'정답: '+t.left+' → '+t.right+' (기억해 두세요. 나중에 다시 물어봅니다.)'});
+  renderExChat();updateDrillScore();await nextDrillQuestion();
+}
+async function cramToExplain(){
+  if(!window._lastCramText){alert('먼저 설명을 생성하세요.');return;}
+  switchTo('explain');
+  exTarget=+(localStorage.getItem('ccnaTarget')||85);
+  const ts=document.getElementById('exTarget');if(ts)ts.value=String(exTarget);
+  const triggers=parseTriggers(window._lastCramText);
+  if(triggers.length<2){startExplainQ({custom:true,q:window._lastCramTopic||'이 주제',material:window._lastCramText,e:window._lastCramText,t:'',o:null,a:0,d:'custom'});return;}
+  drillState={triggers:triggers,remaining:triggers.map((_,i)=>i),mastered:[],pass:1,cur:-1};
+  curExplain={drill:true};exHist=[];window._exBusy=false;renderExStats();
+  document.getElementById('exArea').innerHTML='<div id="exChat"></div><div id="exScore"></div><div id="exControls" style="margin-top:10px"><div style="display:flex;gap:8px"><textarea id="exInput" rows="2" placeholder="답을 입력하고 Enter (또는 보내기)…" style="flex:1;margin:0"></textarea><button class="btn green" onclick="sendDrill()">보내기</button></div><div style="margin-top:8px"><button class="btn sec" style="font-size:13px;padding:6px 12px" onclick="drillReveal()">모를 때 정답 보기</button></div></div>';
+  exHist.push({role:'assistant',content:'★★★★★ 트리거 '+triggers.length+'개를 하나씩 물어볼게요. 한 바퀴 다 돈 뒤, 틀린 것만 다음 회차에 다시 묻습니다. 설명을 그대로 베끼지 말고 기억으로 답하세요!'});
+  renderExChat();updateDrillScore();await nextDrillQuestion();
+  const inp=document.getElementById('exInput');if(inp){inp.focus();inp.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendDrill();}};}
+}
+async function runCram(){
+  if(!localStorage.getItem('ccnaApiKey')){alert('먼저 AI 튜터 탭에서 API 키를 저장하세요.');return;}
+  const sel=document.getElementById('cramSel');
+  let topic=sel.value;
+  if(topic==='__custom')topic=(document.getElementById('cramCustom').value||'').trim();
+  if(!topic){alert('주제를 선택하거나 입력하세요.');return;}
+  const out=document.getElementById('cramOut');
+  out.innerHTML='<p class="msg ai think">시험 벼락치기 설명 생성 중…</p>';
+  try{
+    const raw=await callClaude(CRAM_SYS,'다음 CCNA 주제를 위 형식(① ~ ⑨ + ★★★★★)으로, 시험장에서 맞히는 법 중심으로 설명해줘. 주제: '+topic,2800);
+    window._lastCramTopic=topic;window._lastCramText=raw;
+    out.innerHTML='<div class="explain show" style="line-height:1.75">'+mdToHtml(raw)+'</div>'+
+      '<div style="margin-top:10px"><button class="btn green" onclick="cramToExplain()">이 내용으로 설명훈련 (내가 설명하기)</button></div>';
+  }catch(e){out.innerHTML='<div class="explain show">[오류] '+escapeHtml(e.message)+' <button class="btn sec" style="margin-top:6px" onclick="runCram()">다시</button></div>';}
 }
 
 /* init */
